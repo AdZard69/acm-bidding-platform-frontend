@@ -7,7 +7,9 @@ import {
   Team,
   User,
   WinnerResult,
-  RoundEndedSummary
+  RoundEndedSummary,
+  Bid,
+  Assignment
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -60,7 +62,6 @@ class ApiClient {
       headers
     });
 
-    // Check for exposed Authorization header in response (some login endpoints return it)
     const authHeader = response.headers.get('Authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
       this.setToken(authHeader.substring(7));
@@ -84,6 +85,11 @@ class ApiClient {
     }
 
     return data as T;
+  }
+
+  // --- Health ---
+  async checkHealth(): Promise<{ success: boolean; status: string; uptime: number }> {
+    return this.request('/health');
   }
 
   // --- Auth API ---
@@ -346,37 +352,43 @@ class ApiClient {
     });
   }
 
-  // --- Team Bidding Routes (fallback or REST) ---
+  // --- Team Bidding Routes ---
 
-  async getCurrentBiddingState() {
-    return this.request<{
-      success: boolean;
-      prompt?: Prompt;
-      secondsLeft?: number;
-      bids?: WinnerResult[];
-    }>('/bid/current');
+  async getCurrentBiddingState(): Promise<{
+    success: boolean;
+    status: string;
+    currentRound: number;
+    currentPrompt: Prompt | null;
+    secondsRemaining: number;
+    bids: Bid[];
+  }> {
+    return this.request('/bid/current');
   }
 
-  async placeBid(bidMinutes: number) {
-    return this.request<{ success: boolean; message: string; bid: unknown }>('/bid/place', {
+  async placeBid(bidMinutes: number): Promise<{ success: boolean; message: string; bid: Bid }> {
+    return this.request('/bid/place', {
       method: 'POST',
       body: JSON.stringify({ bidMinutes })
     });
   }
 
-  async updateBid(bidMinutes: number) {
-    return this.request<{ success: boolean; message: string; bid: unknown }>('/bid/update', {
+  async updateBid(bidMinutes: number): Promise<{ success: boolean; message: string; bid: Bid }> {
+    return this.request('/bid/update', {
       method: 'PUT',
       body: JSON.stringify({ bidMinutes })
     });
   }
 
-  async getMyBids() {
-    return this.request<{ success: boolean; bids: unknown[] }>('/bid/my-bids');
+  async getMyBids(): Promise<{ success: boolean; bids: (Bid & { prompt?: Prompt })[] }> {
+    return this.request('/bid/my-bids');
   }
 
-  async getMyAssignment() {
-    return this.request<{ success: boolean; assignment: unknown }>('/bid/assignment');
+  async getMyAssignment(): Promise<{ success: boolean; assignment: Assignment | null }> {
+    return this.request('/bid/assignment');
+  }
+
+  async getPublicLeaderboard(): Promise<{ success: boolean; leaderboard: LeaderboardEntry[] }> {
+    return this.request('/bid/leaderboard');
   }
 }
 

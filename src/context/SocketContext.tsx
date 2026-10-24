@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import {
-  GameConfig,
   GameStatus,
   Prompt,
   Bid,
@@ -12,7 +11,7 @@ import {
   Score
 } from '../types';
 import { useAuth } from './AuthContext';
-import { sound } from '../utils/audio';
+import { api } from '../api/client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -28,12 +27,11 @@ interface SocketContextType {
   myAssignment: AssignmentReceivedData | null;
   myScore: Score | null;
   roundSummary: RoundEndedSummary | null;
-  soundEnabled: boolean;
-  toggleSound: () => void;
+  refreshState: () => Promise<void>;
   // Team actions
   placeBid: (bidMinutes: number) => Promise<{ success: boolean; message?: string }>;
   updateBid: (bidMinutes: number) => Promise<{ success: boolean; message?: string }>;
-  // Admin socket actions
+  // Admin actions
   adminStartRound: (roundNumber?: number) => Promise<{ success: boolean; message?: string }>;
   adminPause: () => Promise<{ success: boolean }>;
   adminResume: () => Promise<{ success: boolean }>;
@@ -45,11 +43,11 @@ interface SocketContextType {
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
 
-  // Live Game States
+  // Live game states
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [currentRound, setCurrentRound] = useState<number>(0);
   const [currentPrompt, setCurrentPrompt] = useState<Prompt | null>(null);
@@ -59,14 +57,26 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [myAssignment, setMyAssignment] = useState<AssignmentReceivedData | null>(null);
   const [myScore, setMyScore] = useState<Score | null>(null);
   const [roundSummary, setRoundSummary] = useState<RoundEndedSummary | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
-  const prevSecondsRef = useRef<number>(0);
+  // Sync state via REST API as baseline
+  const refreshState = useCallback(async () => {
+    try {
+      const res = await api.getCurrentBiddingState();
+      if (res.success) {
+        if (res.status) setGameStatus(res.status as GameStatus);
+        if (res.currentRound !== undefined) setCurrentRound(res.currentRound);
+        if (res.currentPrompt) setCurrentPrompt(res.currentPrompt);
+        if (res.secondsRemaining !== undefined) setSecondsRemaining(res.secondsRemaining);
+        if (res.bids) setBids(res.bids);
+      }
+    } catch {
+      // Ignore initial sync failure if server not ready
+    }
+  }, []);
 
-  const toggleSound = () => {
-    sound.enabled = !soundEnabled;
-    setSoundEnabled(!soundEnabled);
-  };
+  useEffect(() => {
+    refreshState();
+  }, [refreshState]);
 
   useEffect(() => {
     if (!token) {
@@ -87,76 +97,61 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     newSocket.on('connect', () => {
       setIsConnected(true);
+      refreshState();
     });
 
     newSocket.on('disconnect', () => {
       setIsConnected(false);
     });
 
-    // timer:tick -> { secondsLeft, promptId }
+    // timer:tick
     newSocket.on('timer:tick', (data: { secondsLeft: number; promptId?: number }) => {
-      const left = data.secondsLeft;
-      setSecondsRemaining(left);
-
-      // Play audio cues
-      if (left <= 5 && left > 0 && left !== prevSecondsRef.current) {
-        sound.warningTick();
-      } else if (left <= 10 && left > 5 && left !== prevSecondsRef.current) {
-        sound.tick();
-      } else if (left === 0 && prevSecondsRef.current > 0) {
-        sound.buzzer();
-      }
-      prevSecondsRef.current = left;
+      setSecondsRemaining(data.secondsLeft);
     });
 
-    // bid:new -> { teamId, teamName, bidMinutes, promptId }
+    // bid:new
     newSocket.on('bid:new', (data: Bid) => {
       setBids((prev) => {
-        // filter out any existing bid from same team
         const filtered = prev.filter((b) => b.teamId !== data.teamId);
         return [...filtered, data].sort((a, b) => a.bidMinutes - b.bidMinutes);
       });
-      sound.tick();
     });
 
-    // bid:updated -> { teamId, teamName, bidMinutes, promptId }
+    // bid:updated
     newSocket.on('bid:updated', (data: Bid) => {
       setBids((prev) => {
         const filtered = prev.filter((b) => b.teamId !== data.teamId);
         return [...filtered, data].sort((a, b) => a.bidMinutes - b.bidMinutes);
       });
-      sound.tick();
     });
 
-    // prompt:reveal -> { promptId, title, description, displayOrder }
+    // prompt:reveal
     newSocket.on('prompt:reveal', (data: Prompt) => {
       setCurrentPrompt(data);
-      setBids([]); // reset bids for the new prompt
+      setBids([]);
       setLastWinners(null);
       setGameStatus('bidding');
     });
 
-    // prompt:results -> { promptId, winners: [...] }
+    // prompt:results
     newSocket.on('prompt:results', (data: PromptResultsData) => {
       setLastWinners(data.winners);
-      sound.victory();
     });
 
-    // prompt:next -> { nextPromptIndex, totalPrompts }
+    // prompt:next
     newSocket.on('prompt:next', () => {
       setBids([]);
     });
 
-    // round:started -> { roundNumber }
+    // round:started
     newSocket.on('round:started', (data: { roundNumber: number }) => {
       setCurrentRound(data.roundNumber);
       setGameStatus('bidding');
       setRoundSummary(null);
       setBids([]);
-      sound.victory();
     });
 
-    // round:paused -> { secondsRemaining }
+    // round:paused
     newSocket.on('round:paused', (data: { secondsRemaining: number }) => {
       setGameStatus('paused');
       if (data?.secondsRemaining !== undefined) {
@@ -164,7 +159,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     });
 
-    // round:resumed -> { secondsRemaining }
+    // round:resumed
     newSocket.on('round:resumed', (data: { secondsRemaining: number }) => {
       setGameStatus('bidding');
       if (data?.secondsRemaining !== undefined) {
@@ -172,37 +167,33 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     });
 
-    // round:ended -> { roundNumber, summary }
+    // round:ended
     newSocket.on('round:ended', (data: { roundNumber: number; summary: RoundEndedSummary }) => {
       setGameStatus('round_ended');
       setRoundSummary(data.summary);
       setSecondsRemaining(0);
-      sound.buzzer();
     });
 
-    // timer:extended -> { newSecondsLeft }
+    // timer:extended
     newSocket.on('timer:extended', (data: { newSecondsLeft: number }) => {
       setSecondsRemaining(data.newSecondsLeft);
-      sound.tick();
     });
 
-    // game:status -> { status, currentRound, currentPrompt }
+    // game:status
     newSocket.on('game:status', (data: { status: GameStatus; currentRound?: number; currentPrompt?: Prompt }) => {
       setGameStatus(data.status);
       if (data.currentRound !== undefined) setCurrentRound(data.currentRound);
       if (data.currentPrompt !== undefined) setCurrentPrompt(data.currentPrompt);
     });
 
-    // assignment:received -> { promptId, title, description, bidMinutes, multiplier, codingTimeMinutes }
+    // assignment:received
     newSocket.on('assignment:received', (data: AssignmentReceivedData) => {
       setMyAssignment(data);
-      sound.victory();
     });
 
-    // score:received -> { judgeScore, multiplier, finalScore }
+    // score:received
     newSocket.on('score:received', (data: Score) => {
       setMyScore(data);
-      sound.victory();
     });
 
     setSocket(newSocket);
@@ -210,47 +201,44 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       newSocket.disconnect();
     };
-  }, [token]);
+  }, [token, refreshState]);
 
-  // Client bid actions
+  // Client bid actions (tries socket first, falls back to REST api)
   const placeBid = useCallback(
-    (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
-      return new Promise((resolve) => {
-        if (!socket) {
-          resolve({ success: false, message: 'Socket not connected' });
-          return;
-        }
-        socket.emit('bid:place', { bidMinutes }, (res: { success: boolean; message?: string }) => {
-          resolve(res || { success: true });
+    async (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
+      if (socket && isConnected) {
+        return new Promise((resolve) => {
+          socket.emit('bid:place', { bidMinutes }, async (res: { success: boolean; error?: { message: string }; message?: string }) => {
+            if (res && res.success === false) {
+              resolve({ success: false, message: res.error?.message || res.message });
+            } else {
+              resolve({ success: true });
+            }
+          });
         });
-      });
+      }
+      try {
+        await api.placeBid(bidMinutes);
+        return { success: true };
+      } catch (err: unknown) {
+        return { success: false, message: err instanceof Error ? err.message : 'Failed to place bid' };
+      }
     },
-    [socket]
+    [socket, isConnected]
   );
 
   const updateBid = useCallback(
-    (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
-      return new Promise((resolve) => {
-        if (!socket) {
-          resolve({ success: false, message: 'Socket not connected' });
-          return;
-        }
-        socket.emit('bid:update', { bidMinutes }, (res: { success: boolean; message?: string }) => {
-          resolve(res || { success: true });
-        });
-      });
+    async (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
+      return placeBid(bidMinutes);
     },
-    [socket]
+    [placeBid]
   );
 
   // Admin Socket actions with acks
   const adminStartRound = useCallback(
     (roundNumber?: number): Promise<{ success: boolean; message?: string }> => {
       return new Promise((resolve) => {
-        if (!socket) {
-          resolve({ success: false, message: 'Socket not connected' });
-          return;
-        }
+        if (!socket) return resolve({ success: false, message: 'Socket disconnected' });
         socket.emit('admin:start-round', { roundNumber }, (res: { success: boolean; message?: string }) => {
           resolve(res || { success: true });
         });
@@ -315,8 +303,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     myAssignment,
     myScore,
     roundSummary,
-    soundEnabled,
-    toggleSound,
+    refreshState,
     placeBid,
     updateBid,
     adminStartRound,
