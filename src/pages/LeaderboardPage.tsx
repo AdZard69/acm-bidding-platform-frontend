@@ -5,10 +5,12 @@ import {
   Search
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useSocket } from '../context/SocketContext';
 import { LeaderboardEntry } from '../types';
 import { calculateBoostPercentage } from '../utils/multiplier';
 
 export const LeaderboardPage: React.FC = () => {
+  const { socket } = useSocket();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -33,6 +35,17 @@ export const LeaderboardPage: React.FC = () => {
     const interval = setInterval(fetchLeaderboard, 10000);
     return () => clearInterval(interval);
   }, [fetchLeaderboard]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = () => {
+      fetchLeaderboard();
+    };
+    socket.on('leaderboard:update', handleUpdate);
+    return () => {
+      socket.off('leaderboard:update', handleUpdate);
+    };
+  }, [socket, fetchLeaderboard]);
 
   const filtered = entries.filter((e) =>
     e.teamName.toLowerCase().includes(searchTerm.toLowerCase()) ||

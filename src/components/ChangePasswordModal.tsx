@@ -59,85 +59,85 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="relative w-full max-w-md bg-surface-100 border border-surface-border rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-surface-border flex items-center justify-between bg-surface-200/50">
+      <div className="relative w-full max-w-sm bg-[#141211] border border-white/10 rounded-xl shadow-2xl overflow-hidden font-mono text-xs">
+        <div className="px-5 py-3.5 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-2.5">
-            <KeyRound className="w-5 h-5 text-brand-cyan" />
-            <h3 className="text-base font-bold text-white font-mono">Change Password</h3>
+            <KeyRound className="w-4 h-4 text-[#D4AF37]" />
+            <h3 className="font-bold text-[#F4F0EA]">Change Password</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-surface-50 transition-colors"
+            className="p-1 rounded text-[#A8A29E] hover:text-[#F4F0EA]"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+            <div className="p-2.5 rounded-lg bg-[#721426]/20 border border-[#D45B70]/40 text-[#D45B70] flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+            <div className="p-2.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{success}</span>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1.5">Current Password</label>
+            <label className="block text-[#A8A29E] mb-1">Current Password</label>
             <input
               type="password"
               required
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-surface-300 border border-surface-border rounded-xl text-white text-sm focus:outline-none focus:border-brand-cyan font-mono"
+              className="w-full px-3 py-2 bg-[#0E0D0C] border border-white/10 rounded-lg text-[#F4F0EA] focus:outline-none focus:border-[#D4AF37]"
               placeholder="••••••••"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1.5">New Password (min 6 chars)</label>
+            <label className="block text-[#A8A29E] mb-1">New Password (min 6 chars)</label>
             <input
               type="password"
               required
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-surface-300 border border-surface-border rounded-xl text-white text-sm focus:outline-none focus:border-brand-cyan font-mono"
+              className="w-full px-3 py-2 bg-[#0E0D0C] border border-white/10 rounded-lg text-[#F4F0EA] focus:outline-none focus:border-[#D4AF37]"
               placeholder="••••••••"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1.5">Confirm New Password</label>
+            <label className="block text-[#A8A29E] mb-1">Confirm New Password</label>
             <input
               type="password"
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-surface-300 border border-surface-border rounded-xl text-white text-sm focus:outline-none focus:border-brand-cyan font-mono"
+              className="w-full px-3 py-2 bg-[#0E0D0C] border border-white/10 rounded-lg text-[#F4F0EA] focus:outline-none focus:border-[#D4AF37]"
               placeholder="••••••••"
             />
           </div>
 
-          <div className="pt-2 flex justify-end gap-3">
+          <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-surface-200 hover:bg-surface-50 text-slate-300 text-xs font-mono rounded-xl transition-colors"
+              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-[#A8A29E] rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-brand-cyan hover:bg-brand-cyan/90 text-slate-950 font-bold text-xs font-mono rounded-xl transition-all shadow-md shadow-brand-cyan/20 disabled:opacity-50"
+              className="px-4 py-1.5 bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold uppercase rounded-lg transition-colors disabled:opacity-50"
             >
-              {loading ? 'Updating...' : 'Update Password'}
+              {loading ? 'Updating...' : 'Save Password'}
             </button>
           </div>
         </form>
