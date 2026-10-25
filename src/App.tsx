@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { AdminLoginPage } from './pages/AdminLoginPage';
 import { ArenaPage } from './pages/ArenaPage';
 import { TeamPage } from './pages/TeamPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
                 {/* Public Routes */}
                 <Route path="/" element={<HomePage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/admin/login" element={<AdminLoginPage />} />
                 <Route path="/arena" element={<ArenaPage />} />
                 <Route path="/leaderboard" element={<LeaderboardPage />} />
 

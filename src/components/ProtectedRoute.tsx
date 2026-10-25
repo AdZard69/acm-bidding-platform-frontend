@@ -18,22 +18,23 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4">
-        <div className="w-12 h-12 border-4 border-brand-cyan/20 border-t-brand-cyan rounded-full animate-spin"></div>
-        <p className="text-slate-400 font-mono text-sm tracking-wider animate-pulse">VERIFYING CREDENTIALS...</p>
+        <div className="w-8 h-8 border-2 border-slate-700 border-t-white rounded-full animate-spin"></div>
+        <p className="text-slate-400 font-mono text-xs">Authenticating...</p>
       </div>
     );
   }
 
   if (!isAuthenticated || !user) {
+    if (allowedRoles && allowedRoles.includes('admin') && !allowedRoles.includes('team')) {
+      return <Navigate to="/admin/login" state={{ from: location }} replace />;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // If team trying to access admin, redirect to /team
     if (user.role === 'team') {
       return <Navigate to="/team" replace />;
     }
-    // If admin trying to access team, redirect to /admin
     if (user.role === 'admin') {
       return <Navigate to="/admin" replace />;
     }

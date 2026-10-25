@@ -6,17 +6,14 @@ import {
   Trophy,
   ShieldCheck,
   LogOut,
-  KeyRound,
-  Radio
+  KeyRound
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useSocket } from '../context/SocketContext';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
-  const { isConnected } = useSocket();
   const [isPassModalOpen, setIsPassModalOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
@@ -49,17 +46,19 @@ export const Navbar: React.FC = () => {
               <span>Arena</span>
             </Link>
 
-            <Link
-              to="/team"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                isActive('/team')
-                  ? 'bg-surface-50 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-brand-emerald" />
-              <span>Team</span>
-            </Link>
+            {isAuthenticated && user?.role === 'team' && (
+              <Link
+                to="/team"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                  isActive('/team')
+                    ? 'bg-surface-50 text-white font-semibold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-brand-emerald" />
+                <span>Team</span>
+              </Link>
+            )}
 
             <Link
               to="/leaderboard"
@@ -73,35 +72,23 @@ export const Navbar: React.FC = () => {
               <span>Leaderboard</span>
             </Link>
 
-            <Link
-              to="/admin"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                isActive('/admin')
-                  ? 'bg-surface-50 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-purple" />
-              <span>Admin</span>
-            </Link>
+            {isAuthenticated && user?.role === 'admin' && (
+              <Link
+                to="/admin"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                  isActive('/admin')
+                    ? 'bg-surface-50 text-white font-semibold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-purple" />
+                <span>Admin</span>
+              </Link>
+            )}
           </nav>
 
-          {/* Right Status & Auth */}
+          {/* Right Auth */}
           <div className="flex items-center gap-3">
-            {/* Live Socket Sync Status */}
-            <div
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border ${
-                isConnected
-                  ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
-                  : 'border-slate-700 text-slate-500 bg-surface-200'
-              }`}
-              title={isConnected ? 'Live WebSocket Connected' : 'Disconnected'}
-            >
-              <Radio className={`w-3 h-3 ${isConnected ? 'animate-pulse' : ''}`} />
-              <span className="hidden sm:inline">{isConnected ? 'LIVE' : 'OFFLINE'}</span>
-            </div>
-
-            {/* Auth status */}
             {isAuthenticated && user ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-slate-200">
