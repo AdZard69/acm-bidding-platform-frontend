@@ -13,7 +13,12 @@ import {
 import { useAuth } from './AuthContext';
 import { api } from '../api/client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const DEFAULT_SOCKET_URL =
+  typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
+    ? 'https://acm-bidding-platform-backend.onrender.com'
+    : 'http://localhost:5000';
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || DEFAULT_SOCKET_URL;
 
 interface SocketContextType {
   socket: Socket | null;

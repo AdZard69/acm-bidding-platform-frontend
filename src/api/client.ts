@@ -12,7 +12,12 @@ import {
   Assignment
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const DEFAULT_API_BASE =
+  typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
+    ? 'https://acm-bidding-platform-backend.onrender.com/api'
+    : 'http://localhost:5000/api';
+
+const API_BASE = import.meta.env.VITE_API_URL || DEFAULT_API_BASE;
 
 class ApiClient {
   private token: string | null = null;
