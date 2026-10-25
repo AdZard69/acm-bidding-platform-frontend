@@ -381,7 +381,7 @@ export const AdminPage: React.FC = () => {
               onClick={() => setActiveTab(tab.id as AdminTab)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors ${
                 isSelected
-                  ? 'bg-white text-slate-950 font-bold'
+                  ? 'bg-[#721426] text-white font-bold border border-[#D45B70]/40'
                   : 'bg-surface-100 text-slate-400 hover:text-white'
               }`}
             >
@@ -407,7 +407,7 @@ export const AdminPage: React.FC = () => {
             </div>
             <div>
               <span className="text-slate-500 block">TIME LEFT</span>
-              <span className="text-base font-bold text-brand-cyan">{secondsRemaining}s</span>
+              <span className="text-base font-bold text-[#D4AF37]">{secondsRemaining}s</span>
             </div>
             <div>
               <span className="text-slate-500 block">ACTIVE PROMPT</span>
@@ -425,7 +425,7 @@ export const AdminPage: React.FC = () => {
               <button
                 onClick={() => handleStartRound(1)}
                 disabled={gameStatus === 'bidding' || gameStatus === 'paused'}
-                className="py-2.5 px-4 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-bold uppercase transition-colors disabled:opacity-40"
+                className="py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold uppercase transition-colors disabled:opacity-40"
               >
                 Start Round 1
               </button>
@@ -433,7 +433,7 @@ export const AdminPage: React.FC = () => {
               <button
                 onClick={() => handleStartRound(2)}
                 disabled={gameStatus === 'bidding' || gameStatus === 'paused'}
-                className="py-2.5 px-4 rounded-lg bg-surface-50 hover:bg-surface-200 text-brand-amber border border-surface-border font-bold uppercase transition-colors disabled:opacity-40"
+                className="py-2.5 px-4 rounded-lg bg-surface-50 hover:bg-surface-200 text-[#E5C158] border border-[#D4AF37]/30 font-bold uppercase transition-colors disabled:opacity-40"
               >
                 Start Round 2
               </button>

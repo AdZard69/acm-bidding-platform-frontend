@@ -20,68 +20,68 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full border-b border-surface-border bg-surface-300/90 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#0B0B0B]/90 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          {/* Logo / Title */}
-          <Link to="/" className="flex items-center gap-2.5 shrink-0">
-            <span className="font-mono font-bold tracking-tight text-white text-sm">
-              BID<span className="text-brand-cyan">&</span>CODE
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
+            <span className="font-sans font-bold tracking-tight text-[#F4F0EA] text-sm">
+              BID<span className="font-editorial italic font-normal text-[#D4AF37] px-0.5 text-base">&</span>CODE
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 text-slate-400 border border-surface-border">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-[#D4AF37] border border-white/10">
               ACM
             </span>
           </Link>
 
           {/* Navigation Links */}
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1.5">
             <Link
               to="/arena"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
                 isActive('/arena')
-                  ? 'bg-surface-50 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#181614] text-[#D4AF37] border border-[#D4AF37]/30 font-semibold'
+                  : 'text-[#A8A29E] hover:text-[#F4F0EA] border border-transparent'
               }`}
             >
-              <Tv className="w-3.5 h-3.5 text-brand-cyan" />
+              <Tv className="w-3.5 h-3.5" />
               <span>Arena</span>
             </Link>
 
             {isAuthenticated && user?.role === 'team' && (
               <Link
                 to="/team"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
                   isActive('/team')
-                    ? 'bg-surface-50 text-white font-semibold'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#181614] text-[#E5C158] border border-[#E5C158]/30 font-semibold'
+                    : 'text-[#A8A29E] hover:text-[#F4F0EA] border border-transparent'
                 }`}
               >
-                <Users className="w-3.5 h-3.5 text-brand-emerald" />
+                <Users className="w-3.5 h-3.5" />
                 <span>Team</span>
               </Link>
             )}
 
             <Link
               to="/leaderboard"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
                 isActive('/leaderboard')
-                  ? 'bg-surface-50 text-white font-semibold'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#181614] text-[#D4AF37] border border-[#D4AF37]/30 font-semibold'
+                  : 'text-[#A8A29E] hover:text-[#F4F0EA] border border-transparent'
               }`}
             >
-              <Trophy className="w-3.5 h-3.5 text-brand-amber" />
+              <Trophy className="w-3.5 h-3.5" />
               <span>Leaderboard</span>
             </Link>
 
             {isAuthenticated && user?.role === 'admin' && (
               <Link
                 to="/admin"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all ${
                   isActive('/admin')
-                    ? 'bg-surface-50 text-white font-semibold'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#181614] text-[#D45B70] border border-[#D45B70]/30 font-semibold'
+                    : 'text-[#A8A29E] hover:text-[#F4F0EA] border border-transparent'
                 }`}
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-brand-purple" />
+                <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Admin</span>
               </Link>
             )}
@@ -91,13 +91,13 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-3">
             {isAuthenticated && user ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-200">
+                <span className="text-xs font-mono text-[#D4AF37] px-2 py-0.5 rounded bg-white/5 border border-white/10">
                   {user.role === 'team' ? user.teamName : user.username}
                 </span>
 
                 <button
                   onClick={() => setIsPassModalOpen(true)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-100 transition-colors"
+                  className="p-1.5 rounded-lg text-[#A8A29E] hover:text-[#F4F0EA] hover:bg-white/5 transition-colors"
                   title="Change Password"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
@@ -105,7 +105,7 @@ export const Navbar: React.FC = () => {
 
                 <button
                   onClick={logout}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-surface-100 transition-colors"
+                  className="p-1.5 rounded-lg text-[#A8A29E] hover:text-[#D45B70] hover:bg-white/5 transition-colors"
                   title="Logout"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -114,7 +114,7 @@ export const Navbar: React.FC = () => {
             ) : (
               <Link
                 to="/login"
-                className="px-3 py-1.5 rounded-lg bg-surface-100 hover:bg-surface-50 text-white border border-surface-border text-xs font-mono font-medium transition-colors"
+                className="px-3.5 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] text-xs font-mono font-bold tracking-wide transition-all shadow-sm"
               >
                 Sign In
               </Link>

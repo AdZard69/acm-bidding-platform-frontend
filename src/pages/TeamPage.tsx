@@ -290,7 +290,7 @@ export const TeamPage: React.FC = () => {
                           onClick={() => setBidMinutes(mins)}
                           className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
                             isSelected
-                              ? 'bg-white text-slate-950 font-bold border-white'
+                              ? 'bg-[#D4AF37] text-black font-bold border-[#D4AF37]'
                               : isTaken
                               ? 'bg-surface-200 text-slate-600 border-surface-border line-through'
                               : 'bg-surface-200 text-slate-300 border-surface-border hover:text-white'
@@ -307,7 +307,7 @@ export const TeamPage: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-300">Bid Minutes:</span>
-                    <span className="font-bold text-white text-sm">{bidMinutes} mins</span>
+                    <span className="font-bold text-[#D4AF37] text-sm">{bidMinutes} mins</span>
                   </div>
                   <input
                     type="range"
@@ -316,7 +316,7 @@ export const TeamPage: React.FC = () => {
                     step={1}
                     value={bidMinutes}
                     onChange={(e) => setBidMinutes(Number(e.target.value))}
-                    className="w-full accent-white cursor-pointer"
+                    className="w-full accent-[#D4AF37] cursor-pointer"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500">
                     <span>30m (Max Multiplier)</span>
@@ -343,7 +343,7 @@ export const TeamPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting || !!collision || gameStatus !== 'bidding'}
-                  className="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-40"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-40"
                 >
                   {submitting
                     ? 'Submitting...'

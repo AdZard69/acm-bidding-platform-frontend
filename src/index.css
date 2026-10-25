@@ -4,26 +4,27 @@
 
 @layer base {
   body {
-    background-color: #090d14;
-    color: #f1f5f9;
+    background-color: #0B0B0B;
+    color: #F4F0EA;
+    font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 }
 
-/* Crisp scrollbar */
+/* Crisp scrollbar matching bid-code theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #090d14;
+  background: #0B0B0B;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #24201D;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #38322D;
 }

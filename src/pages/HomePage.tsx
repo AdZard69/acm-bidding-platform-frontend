@@ -5,7 +5,10 @@ import {
   Users,
   Trophy,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Clock,
+  Zap,
+  Target
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,101 +18,111 @@ export const HomePage: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-12 space-y-8">
-      {/* Platform Title */}
-      <div className="space-y-1.5 border-b border-surface-border pb-6">
-        <h1 className="text-2xl sm:text-3xl font-mono font-bold text-white tracking-tight">
-          Bid & Code Platform
+    <div className="max-w-5xl mx-auto px-4 py-12 space-y-10">
+      {/* Editorial Header */}
+      <div className="space-y-3">
+        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono text-[#D4AF37]">
+          <span>USICT-ACM</span>
+          <span className="text-white/20">•</span>
+          <span>Time-Commitment Hackathon</span>
+        </div>
+        <h1 className="text-3xl sm:text-5xl font-sans font-extrabold tracking-tight text-[#F4F0EA]">
+          BID <span className="font-editorial italic font-normal text-[#D4AF37]">&</span> CODE
         </h1>
-        <p className="text-xs font-mono text-slate-400">
-          Hackathon auction platform where teams bid on coding time commitments.
+        <p className="text-sm sm:text-base text-[#A8A29E] font-sans max-w-xl leading-relaxed">
+          The auction where time is currency. Bid the minutes you commit to build—lower bids earn higher score multipliers.
         </p>
       </div>
 
-      {/* Live Event Status Card */}
-      <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-3 font-mono text-xs">
-        <div className="flex items-center justify-between text-slate-400 border-b border-surface-border pb-3">
-          <span className="uppercase font-semibold">Event Status</span>
-          <span className="flex items-center gap-1.5 text-white">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                gameStatus === 'bidding' ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'
-              }`}
-            />
-            <strong className="uppercase">{gameStatus}</strong>
-          </span>
+      {/* Live Event Status Strip */}
+      <div className="p-4 rounded-xl bg-[#141211] border border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-mono text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-[#7A756D] uppercase text-[11px] tracking-wider">Status:</span>
+          {gameStatus === 'bidding' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] animate-ping" />
+              Live Auction
+            </span>
+          ) : gameStatus === 'paused' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-semibold">
+              Paused
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[#A8A29E]">
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
+              Waiting for Round
+            </span>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
+        <div className="flex flex-wrap items-center gap-6 text-[#A8A29E]">
           <div>
-            <span className="text-slate-500 block">ROUND</span>
-            <span className="text-sm font-bold text-white">
-              {currentRound > 0 ? `Round ${currentRound}` : 'None'}
-            </span>
+            <span className="text-[#7A756D] mr-1.5">ROUND:</span>
+            <strong className="text-[#F4F0EA]">{currentRound > 0 ? `R${currentRound}` : '—'}</strong>
           </div>
-
           <div>
-            <span className="text-slate-500 block">TIMER</span>
-            <span className="text-sm font-bold text-brand-cyan">
-              {secondsRemaining}s
-            </span>
+            <span className="text-[#7A756D] mr-1.5">TIMER:</span>
+            <strong className="text-[#D4AF37]">{secondsRemaining}s</strong>
           </div>
-
-          <div className="col-span-2">
-            <span className="text-slate-500 block">ACTIVE PROMPT</span>
-            <span className="text-sm font-bold text-slate-200 truncate block">
+          <div>
+            <span className="text-[#7A756D] mr-1.5">PROMPT:</span>
+            <strong className="text-[#F4F0EA] truncate max-w-[200px] inline-block align-bottom">
               {currentPrompt ? currentPrompt.title : 'None active'}
-            </span>
+            </strong>
           </div>
         </div>
       </div>
 
-      {/* Direct Functional Navigation Grid */}
+      {/* Functional Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Arena */}
         <Link
           to="/arena"
-          className="p-5 rounded-xl bg-surface-100 hover:bg-surface-50 border border-surface-border transition-colors flex flex-col justify-between space-y-4 group"
+          className="group relative p-6 rounded-xl bg-[#141211] hover:bg-[#181614] border border-white/10 hover:border-[#D4AF37]/40 transition-all duration-200 flex flex-col justify-between space-y-6"
         >
-          <div className="space-y-1.5">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-brand-cyan font-bold uppercase tracking-wider">
-                Display
+              <span className="font-mono text-[10px] tracking-widest text-[#D4AF37] uppercase font-bold">
+                Auditorium
               </span>
-              <Tv className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+              <Tv className="w-4 h-4 text-[#7A756D] group-hover:text-[#D4AF37] transition-colors" />
             </div>
-            <h3 className="font-mono font-bold text-white text-base">Projector Arena</h3>
-            <p className="text-xs text-slate-400 font-sans">
-              Big screen display for the auditorium with countdown timer, active prompt, and live auction board.
-            </p>
+            <div>
+              <h3 className="font-sans font-bold text-lg text-[#F4F0EA]">Projector Arena</h3>
+              <p className="text-xs text-[#A8A29E] font-sans mt-1">
+                Big-screen display with countdown timer, active prompt, and live auction board.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1 text-xs font-mono text-slate-300 group-hover:text-white">
-            <span>Open Arena</span>
-            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-[#F4F0EA] group-hover:text-[#D4AF37] transition-colors">
+            <span>Launch Arena</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
           </div>
         </Link>
 
-        {/* Team Portal - only visible to guests and logged-in teams */}
+        {/* Team Portal */}
         {(!isAuthenticated || user?.role === 'team') && (
           <Link
             to={isAuthenticated && user?.role === 'team' ? '/team' : '/login'}
-            className="p-5 rounded-xl bg-surface-100 hover:bg-surface-50 border border-surface-border transition-colors flex flex-col justify-between space-y-4 group"
+            className="group relative p-6 rounded-xl bg-[#141211] hover:bg-[#181614] border border-white/10 hover:border-[#D4AF37]/40 transition-all duration-200 flex flex-col justify-between space-y-6"
           >
-            <div className="space-y-1.5">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-brand-emerald font-bold uppercase tracking-wider">
-                  Teams
+                <span className="font-mono text-[10px] tracking-widest text-[#E5C158] uppercase font-bold">
+                  Participant
                 </span>
-                <Users className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                <Users className="w-4 h-4 text-[#7A756D] group-hover:text-[#E5C158] transition-colors" />
               </div>
-              <h3 className="font-mono font-bold text-white text-base">Team Portal</h3>
-              <p className="text-xs text-slate-400 font-sans">
-                Place time bids during live prompt windows, avoid duplicate collisions, and view awarded problem specs.
-              </p>
+              <div>
+                <h3 className="font-sans font-bold text-lg text-[#F4F0EA]">Team Portal</h3>
+                <p className="text-xs text-[#A8A29E] font-sans mt-1">
+                  Place time bids during live prompt windows and view assigned problem specs.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-1 text-xs font-mono text-slate-300 group-hover:text-white">
-              <span>{isAuthenticated && user?.role === 'team' ? 'Go to Team Portal' : 'Team Sign In'}</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-[#F4F0EA] group-hover:text-[#E5C158] transition-colors">
+              <span>{isAuthenticated && user?.role === 'team' ? 'Open Dashboard' : 'Sign In as Team'}</span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </Link>
         )}
@@ -117,60 +130,81 @@ export const HomePage: React.FC = () => {
         {/* Leaderboard */}
         <Link
           to="/leaderboard"
-          className="p-5 rounded-xl bg-surface-100 hover:bg-surface-50 border border-surface-border transition-colors flex flex-col justify-between space-y-4 group"
+          className="group relative p-6 rounded-xl bg-[#141211] hover:bg-[#181614] border border-white/10 hover:border-[#D4AF37]/40 transition-all duration-200 flex flex-col justify-between space-y-6"
         >
-          <div className="space-y-1.5">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-brand-amber font-bold uppercase tracking-wider">
-                Standings
+              <span className="font-mono text-[10px] tracking-widest text-[#D4AF37] uppercase font-bold">
+                Rankings
               </span>
-              <Trophy className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+              <Trophy className="w-4 h-4 text-[#7A756D] group-hover:text-[#D4AF37] transition-colors" />
             </div>
-            <h3 className="font-mono font-bold text-white text-base">Public Leaderboard</h3>
-            <p className="text-xs text-slate-400 font-sans">
-              Standings showing team bids, multipliers, judge evaluations, and final scores.
-            </p>
+            <div>
+              <h3 className="font-sans font-bold text-lg text-[#F4F0EA]">Leaderboard</h3>
+              <p className="text-xs text-[#A8A29E] font-sans mt-1">
+                Live rankings showing bids, calculated multipliers, judge scores, and final totals.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1 text-xs font-mono text-slate-300 group-hover:text-white">
+          <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-[#F4F0EA] group-hover:text-[#D4AF37] transition-colors">
             <span>View Standings</span>
-            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
           </div>
         </Link>
 
-        {/* Admin Room - only visible to authenticated admins */}
+        {/* Admin Room (only shown to authenticated admins) */}
         {isAuthenticated && user?.role === 'admin' && (
           <Link
             to="/admin"
-            className="p-5 rounded-xl bg-surface-100 hover:bg-surface-50 border border-surface-border transition-colors flex flex-col justify-between space-y-4 group"
+            className="group relative p-6 rounded-xl bg-[#141211] hover:bg-[#181614] border border-white/10 hover:border-[#D45B70]/40 transition-all duration-200 flex flex-col justify-between space-y-6"
           >
-            <div className="space-y-1.5">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-brand-purple font-bold uppercase tracking-wider">
+                <span className="font-mono text-[10px] tracking-widest text-[#D45B70] uppercase font-bold">
                   Organizers
                 </span>
-                <ShieldCheck className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                <ShieldCheck className="w-4 h-4 text-[#7A756D] group-hover:text-[#D45B70] transition-colors" />
               </div>
-              <h3 className="font-mono font-bold text-white text-base">Admin Room</h3>
-              <p className="text-xs text-slate-400 font-sans">
-                Round execution (start, pause, extend, next prompt), team/prompt setup, judge score submission, and reset.
-              </p>
+              <div>
+                <h3 className="font-sans font-bold text-lg text-[#F4F0EA]">Admin Console</h3>
+                <p className="text-xs text-[#A8A29E] font-sans mt-1">
+                  Manage auction rounds, team credentials, problem prompts, and score submissions.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-1 text-xs font-mono text-slate-300 group-hover:text-white">
-              <span>Open Admin Room</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-[#F4F0EA] group-hover:text-[#D45B70] transition-colors">
+              <span>Open Console</span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </Link>
         )}
       </div>
 
-      {/* Auction Rules Overview */}
-      <div className="p-4 rounded-xl border border-surface-border bg-surface-200/40 font-mono text-xs space-y-1.5 text-slate-400">
-        <span className="font-bold text-white uppercase block">Auction Rules:</span>
-        <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
-          <li>Time commitment bounds: Minimum 30 mins, Maximum 120 mins</li>
-          <li>Top 3 lowest bidders win slots for that problem statement</li>
-          <li>No duplicate bids allowed on the same prompt</li>
-        </ul>
+      {/* Clean 3-Metric Rule Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="p-4 rounded-xl bg-[#141211] border border-white/10 flex items-start gap-3">
+          <Clock className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+          <div>
+            <div className="font-mono text-xs font-bold text-[#F4F0EA]">30m – 120m</div>
+            <div className="font-sans text-[11px] text-[#A8A29E]">Time commitment bidding window</div>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#141211] border border-white/10 flex items-start gap-3">
+          <Target className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+          <div>
+            <div className="font-mono text-xs font-bold text-[#F4F0EA]">Top 3 Lowest</div>
+            <div className="font-sans text-[11px] text-[#A8A29E]">Bidders win problem slots</div>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[#141211] border border-white/10 flex items-start gap-3">
+          <Zap className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+          <div>
+            <div className="font-mono text-xs font-bold text-[#F4F0EA]">Anti-Collision</div>
+            <div className="font-sans text-[11px] text-[#A8A29E]">Duplicate bid minutes prevented</div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -113,12 +113,12 @@ export const LeaderboardPage: React.FC = () => {
                         <span
                           className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] ${
                             entry.rank === 1
-                              ? 'bg-amber-400 text-slate-950 font-black'
+                              ? 'bg-[#D4AF37] text-black font-black shadow-sm'
                               : entry.rank === 2
-                              ? 'bg-slate-300 text-slate-950 font-bold'
+                              ? 'bg-[#C4BEB5] text-black font-bold shadow-sm'
                               : entry.rank === 3
-                              ? 'bg-amber-800 text-slate-100 font-bold'
-                              : 'text-slate-400 bg-surface-200'
+                              ? 'bg-[#CD7F32] text-white font-bold shadow-sm'
+                              : 'text-[#A8A29E] bg-white/5'
                           }`}
                         >
                           {entry.rank}
