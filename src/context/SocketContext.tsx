@@ -76,7 +76,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   useEffect(() => {
     refreshState();
-  }, [refreshState]);
+    if (!isConnected) {
+      const interval = setInterval(refreshState, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [isConnected, refreshState]);
 
   useEffect(() => {
     if (!token) {

@@ -111,6 +111,9 @@ export const TeamPage: React.FC = () => {
         throw new Error(res.message || 'Failed to place bid');
       }
       setSuccessMsg(`Bid recorded: ${bidMinutes} minutes`);
+      api.getMyBids().then((res) => {
+        if (res.success) setMyBidsHistory(res.bids);
+      }).catch(() => {});
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to place bid';
@@ -408,6 +411,32 @@ export const TeamPage: React.FC = () => {
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Your Submitted Bids History */}
+      {myBidsHistory.length > 0 && (
+        <div className="p-5 rounded-xl bg-surface-100 border border-surface-border font-mono text-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-surface-border pb-2.5">
+            <span className="font-bold text-white uppercase tracking-wider">Your Placed Bids History</span>
+            <span className="text-slate-400">{myBidsHistory.length} recorded</span>
+          </div>
+          <div className="space-y-1.5">
+            {myBidsHistory.map((h, i) => (
+              <div key={h.id || i} className="p-2.5 rounded-lg bg-surface-200 border border-surface-border flex items-center justify-between">
+                <div>
+                  <span className="text-[#D4AF37] font-bold mr-2">Round {h.round}</span>
+                  <span className="text-slate-200">{h.prompt?.title || `Prompt #${h.promptId}`}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-white font-bold">{h.bidMinutes} mins</span>
+                  <span className="text-[10px] text-slate-400 ml-2">
+                    ({calculateMultiplier(h.bidMinutes, h.round).toFixed(3)}x)
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

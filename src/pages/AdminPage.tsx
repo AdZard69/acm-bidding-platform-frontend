@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Edit3,
   Power
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -49,11 +50,22 @@ export const AdminPage: React.FC = () => {
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamPass, setNewTeamPass] = useState('');
 
+  // Team editing
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamPass, setEditTeamPass] = useState('');
+
   // Prompt creation
   const [showAddPromptModal, setShowAddPromptModal] = useState(false);
   const [newPromptTitle, setNewPromptTitle] = useState('');
   const [newPromptDesc, setNewPromptDesc] = useState('');
   const [newPromptOrder, setNewPromptOrder] = useState<number>(1);
+
+  // Prompt editing
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [editPromptTitle, setEditPromptTitle] = useState('');
+  const [editPromptDesc, setEditPromptDesc] = useState('');
+  const [editPromptOrder, setEditPromptOrder] = useState<number>(1);
 
   // Scoring
   const [judgeScores, setJudgeScores] = useState<Record<number, number>>({});
@@ -227,6 +239,33 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleUpdateTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTeam) return;
+    try {
+      const payload: { teamName?: string; password?: string } = {};
+      if (editTeamName.trim() && editTeamName.trim() !== editingTeam.teamName) {
+        payload.teamName = editTeamName.trim();
+      }
+      if (editTeamPass.trim()) {
+        payload.password = editTeamPass.trim();
+      }
+      if (Object.keys(payload).length === 0) {
+        setEditingTeam(null);
+        return;
+      }
+      const res = await api.updateTeam(editingTeam.id, payload);
+      if (res.success) {
+        showMsg('success', `Team "${res.team.teamName}" updated`);
+        setEditingTeam(null);
+        setEditTeamPass('');
+        fetchAdminData();
+      }
+    } catch (err: unknown) {
+      showMsg('error', err instanceof Error ? err.message : 'Error updating team');
+    }
+  };
+
   // Prompt CRUD
   const handleCreatePrompt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,6 +294,25 @@ export const AdminPage: React.FC = () => {
       }
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Error deleting prompt');
+    }
+  };
+
+  const handleUpdatePrompt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPrompt) return;
+    try {
+      const res = await api.updatePrompt(editingPrompt.id, {
+        title: editPromptTitle.trim(),
+        description: editPromptDesc.trim(),
+        displayOrder: editPromptOrder
+      });
+      if (res.success) {
+        showMsg('success', 'Prompt updated');
+        setEditingPrompt(null);
+        fetchAdminData();
+      }
+    } catch (err: unknown) {
+      showMsg('error', err instanceof Error ? err.message : 'Error updating prompt');
     }
   };
 
@@ -533,6 +591,17 @@ export const AdminPage: React.FC = () => {
                     </td>
                     <td className="py-2.5 px-3 text-right space-x-1.5">
                       <button
+                        onClick={() => {
+                          setEditingTeam(t);
+                          setEditTeamName(t.teamName);
+                          setEditTeamPass('');
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-white"
+                        title="Edit team"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => handleToggleTeam(t.id)}
                         className="p-1 rounded text-slate-400 hover:text-white"
                         title="Toggle active"
@@ -574,12 +643,27 @@ export const AdminPage: React.FC = () => {
               <div key={p.id} className="p-4 rounded-xl bg-surface-100 border border-surface-border space-y-2">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="text-slate-400 font-bold">Order #{p.displayOrder}</span>
-                  <button
-                    onClick={() => handleDeletePrompt(p.id, p.title)}
-                    className="p-1 text-slate-400 hover:text-rose-400"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setEditingPrompt(p);
+                        setEditPromptTitle(p.title);
+                        setEditPromptDesc(p.description);
+                        setEditPromptOrder(p.displayOrder);
+                      }}
+                      className="p-1 text-slate-400 hover:text-white"
+                      title="Edit prompt"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePrompt(p.id, p.title)}
+                      className="p-1 text-slate-400 hover:text-rose-400"
+                      title="Delete prompt"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <h4 className="font-mono font-bold text-white text-sm">{p.title}</h4>
                 <p className="text-xs text-slate-300 font-sans line-clamp-3 leading-relaxed">
@@ -853,6 +937,109 @@ export const AdminPage: React.FC = () => {
                   className="px-3 py-1 bg-white text-slate-950 font-bold rounded"
                 >
                   Add Prompt
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TEAM MODAL */}
+      {editingTeam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
+          <div className="w-full max-w-xs bg-surface-100 border border-surface-border rounded-xl p-5 space-y-4 font-mono text-xs">
+            <h3 className="font-bold text-white text-sm">Edit Team #{editingTeam.id}</h3>
+            <form onSubmit={handleUpdateTeam} className="space-y-3">
+              <div>
+                <label className="text-slate-400 block mb-1">Team Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editTeamName}
+                  onChange={(e) => setEditTeamName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-surface-200 border border-surface-border rounded text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">New Password (leave blank to keep)</label>
+                <input
+                  type="password"
+                  value={editTeamPass}
+                  onChange={(e) => setEditTeamPass(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-2.5 py-1.5 bg-surface-200 border border-surface-border rounded text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingTeam(null)}
+                  className="px-3 py-1 bg-surface-200 text-slate-300 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1 bg-white text-slate-950 font-bold rounded"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PROMPT MODAL */}
+      {editingPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
+          <div className="w-full max-w-sm bg-surface-100 border border-surface-border rounded-xl p-5 space-y-4 font-mono text-xs">
+            <h3 className="font-bold text-white text-sm">Edit Problem Statement</h3>
+            <form onSubmit={handleUpdatePrompt} className="space-y-3">
+              <div>
+                <label className="text-slate-400 block mb-1">Title</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={editPromptTitle}
+                  onChange={(e) => setEditPromptTitle(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-surface-200 border border-surface-border rounded text-white"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Description</label>
+                <textarea
+                  required
+                  rows={4}
+                  value={editPromptDesc}
+                  onChange={(e) => setEditPromptDesc(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-surface-200 border border-surface-border rounded text-white font-sans text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Display Order</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={editPromptOrder}
+                  onChange={(e) => setEditPromptOrder(Number(e.target.value))}
+                  className="w-full px-2.5 py-1.5 bg-surface-200 border border-surface-border rounded text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingPrompt(null)}
+                  className="px-3 py-1 bg-surface-200 text-slate-300 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1 bg-white text-slate-950 font-bold rounded"
+                >
+                  Save
                 </button>
               </div>
             </form>

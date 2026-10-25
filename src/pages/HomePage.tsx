@@ -14,8 +14,16 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 
 export const HomePage: React.FC = () => {
-  const { gameStatus, currentRound, secondsRemaining, currentPrompt } = useSocket();
+  const { isConnected, gameStatus, currentRound, secondsRemaining, currentPrompt, refreshState } = useSocket();
   const { isAuthenticated, user } = useAuth();
+
+  React.useEffect(() => {
+    refreshState();
+    if (!isConnected) {
+      const timer = setInterval(refreshState, 3000);
+      return () => clearInterval(timer);
+    }
+  }, [isConnected, refreshState]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-12 space-y-10">

@@ -11,6 +11,7 @@ import { calculateMultiplier, calculateBoostPercentage } from '../utils/multipli
 
 export const ArenaPage: React.FC = () => {
   const {
+    isConnected,
     gameStatus,
     currentRound,
     currentPrompt,
@@ -24,7 +25,11 @@ export const ArenaPage: React.FC = () => {
 
   useEffect(() => {
     refreshState();
-  }, [refreshState]);
+    if (!isConnected) {
+      const timer = setInterval(refreshState, 1500);
+      return () => clearInterval(timer);
+    }
+  }, [isConnected, refreshState]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {

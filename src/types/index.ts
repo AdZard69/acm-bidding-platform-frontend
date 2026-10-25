@@ -44,6 +44,7 @@ export interface Bid {
   bidMinutes: number;
   round: number;
   submittedAt?: string;
+  prompt?: Prompt;
 }
 
 export interface Assignment {
