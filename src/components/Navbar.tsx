@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { BiddingTimerBadge } from './BiddingTimerBadge';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
@@ -89,6 +90,8 @@ export const Navbar: React.FC = () => {
 
           {/* Right Auth */}
           <div className="flex items-center gap-3">
+            <BiddingTimerBadge compact />
+
             {isAuthenticated && user ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-[#D4AF37] px-2 py-0.5 rounded bg-white/5 border border-white/10">

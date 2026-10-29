@@ -27,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentToken = api.getToken();
     if (!currentToken) {
       setUser(null);
+      setTokenState(null);
       setLoading(false);
       return;
     }
@@ -44,11 +45,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       } else {
         api.setToken(null);
+        setTokenState(null);
         setUser(null);
       }
     } catch {
       // Invalid or expired token
       api.setToken(null);
+      setTokenState(null);
       setUser(null);
     } finally {
       setLoading(false);

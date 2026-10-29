@@ -6,10 +6,13 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 import { LeaderboardEntry } from '../types';
 import { calculateBoostPercentage } from '../utils/multiplier';
 
 export const LeaderboardPage: React.FC = () => {
+  const { isTeam, isAdmin } = useAuth();
+  const showMultiplier = !isTeam;
   const { socket } = useSocket();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -19,7 +22,7 @@ export const LeaderboardPage: React.FC = () => {
     setLoading(true);
     try {
       // Try admin endpoint or public bid endpoint
-      const res = await api.getLeaderboard().catch(() => api.getPublicLeaderboard());
+      const res = await (isAdmin ? api.getLeaderboard() : api.getPublicLeaderboard());
       if (res && res.success && res.leaderboard) {
         setEntries(res.leaderboard);
       }
@@ -28,7 +31,7 @@ export const LeaderboardPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -41,9 +44,10 @@ export const LeaderboardPage: React.FC = () => {
     const handleUpdate = () => {
       fetchLeaderboard();
     };
-    socket.on('leaderboard:update', handleUpdate);
+    const events = ['connect', 'leaderboard:update', 'round:ended', 'game:reset'];
+    events.forEach((event) => socket.on(event, handleUpdate));
     return () => {
-      socket.off('leaderboard:update', handleUpdate);
+      events.forEach((event) => socket.off(event, handleUpdate));
     };
   }, [socket, fetchLeaderboard]);
 
@@ -65,7 +69,9 @@ export const LeaderboardPage: React.FC = () => {
               Public Standings
             </h1>
             <p className="text-xs font-mono text-slate-400">
-              Ranked by Final Multiplied Score (Judge Score × Multiplier)
+              {showMultiplier
+                ? 'Ranked by Final Multiplied Score (Judge Score × Multiplier)'
+                : 'Ranked by Final Score'}
             </p>
           </div>
         </div>
@@ -103,7 +109,9 @@ export const LeaderboardPage: React.FC = () => {
                 <th className="py-3 px-4">Team</th>
                 <th className="py-3 px-4">Assigned Problem</th>
                 <th className="py-3 px-4 text-center">Bid Time</th>
-                <th className="py-3 px-4 text-center">Multiplier</th>
+                {showMultiplier && (
+                  <th className="py-3 px-4 text-center">Multiplier</th>
+                )}
                 <th className="py-3 px-4 text-center">Judge Score</th>
                 <th className="py-3 px-4 text-right">Final Score</th>
               </tr>
@@ -111,7 +119,7 @@ export const LeaderboardPage: React.FC = () => {
             <tbody className="divide-y divide-surface-border">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={showMultiplier ? 7 : 6} className="py-12 text-center text-slate-500">
                     {loading ? 'Loading standings...' : 'No teams found'}
                   </td>
                 </tr>
@@ -159,20 +167,22 @@ export const LeaderboardPage: React.FC = () => {
                         {entry.bidMinutes ? `${entry.bidMinutes}m` : '-'}
                       </td>
 
-                      <td className="py-3 px-4 text-center">
-                        {m ? (
-                          <span className="text-brand-cyan">
-                            {m.toFixed(3)}x
-                            {boost !== null && (
-                              <span className="text-slate-400 text-[10px] ml-1">
-                                (+{boost.toFixed(0)}%)
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
+                      {showMultiplier && (
+                        <td className="py-3 px-4 text-center">
+                          {m ? (
+                            <span className="text-brand-cyan">
+                              {m.toFixed(3)}x
+                              {boost !== null && (
+                                <span className="text-slate-400 text-[10px] ml-1">
+                                  (+{boost.toFixed(0)}%)
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      )}
 
                       <td className="py-3 px-4 text-center text-slate-300">
                         {entry.judgeScore !== null && entry.judgeScore !== undefined

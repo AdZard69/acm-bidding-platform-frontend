@@ -85,6 +85,11 @@ export interface LeaderboardEntry {
   scoredAt?: string | null;
 }
 
+export interface RoundDefinition {
+  roundNumber: number;
+  promptId: number;
+}
+
 export interface GameConfig {
   id: number;
   baseTime: number; // default 120
@@ -92,7 +97,7 @@ export interface GameConfig {
   maxTeams: number; // default 10
   slotsPerPrompt: number; // default 3
   bidDurationSeconds: number; // default 60
-  currentRound: number; // 0, 1, 2
+  currentRound: number; // 0 before bidding; prompt position thereafter
   currentPromptIndex: number; // 0-based
   status: GameStatus;
   updatedAt?: string;
@@ -131,4 +136,62 @@ export interface AssignmentReceivedData {
   multiplier: number;
   codingTimeMinutes: number;
   round?: number;
+}
+
+export interface ClockBiddingState {
+  status: GameStatus;
+  currentRound: number;
+  activePromptId: number | null;
+  isRunning: boolean;
+  isPaused: boolean;
+  hasExpired: boolean;
+  startTime: number | null;
+  endsAt: number | null;
+  durationSeconds: number;
+  remainingMs: number;
+  secondsRemaining: number;
+}
+
+export interface ClockStatusResponse {
+  success: boolean;
+  serverTime: number;
+  serverTimeIso: string;
+  uptime: number;
+  timezone: string;
+  bidding: ClockBiddingState;
+}
+
+export interface ClockSyncResponse {
+  success: boolean;
+  clientTime: number | null;
+  serverReceiveTime: number;
+  serverTransmitTime: number;
+  serverTime: number;
+  serverTimeIso: string;
+  precision: string;
+}
+
+export interface CurrentBiddingStateResponse {
+  success: boolean;
+  status: GameStatus;
+  currentRound: number;
+  currentPrompt: Prompt | null;
+  rounds: RoundDefinition[];
+  totalRounds: number;
+  hasNextRound: boolean;
+  nextRoundNumber: number | null;
+  winners?: WinnerResult[];
+  summary?: RoundEndedSummary | null;
+  secondsRemaining: number;
+  remainingMs: number;
+  durationSeconds: number;
+  timerId: string | null;
+  availableSlots: number;
+  config: Pick<GameConfig, 'baseTime' | 'minBid' | 'slotsPerPrompt' | 'bidDurationSeconds'>;
+  serverTime?: number;
+  startTime?: number | null;
+  endsAt?: number | null;
+  isPaused?: boolean;
+  hasExpired?: boolean;
+  bids: Bid[];
 }

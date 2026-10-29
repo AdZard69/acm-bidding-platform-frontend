@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ShieldCheck,
   Play,
@@ -17,33 +17,62 @@ import {
   Eye,
   EyeOff,
   Edit3,
-  Power
+  Power,
+  TrendingDown,
+  Clock,
+  History,
+  SlidersHorizontal
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useSocket } from '../context/SocketContext';
-import { Team, Prompt, GameConfig, LeaderboardEntry } from '../types';
-import { calculateFinalScore } from '../utils/multiplier';
+import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
+import { Team, Prompt, GameConfig, LeaderboardEntry, Bid } from '../types';
+import { groupRoundBids, promptRounds } from '../utils/rounds';
+import { calculateFinalScore, calculateMultiplier, calculateBoostPercentage } from '../utils/multiplier';
 
 type AdminTab = 'controls' | 'teams' | 'prompts' | 'judging' | 'config' | 'reset';
 
 export const AdminPage: React.FC = () => {
   const {
+    socket,
+    isConnected,
     gameStatus,
     currentRound,
+    rounds: capturedRounds,
+    hasNextRound,
     currentPrompt,
     secondsRemaining,
-    refreshState
+    availableSlots,
+    isPaused,
+    isExpired,
+    bids,
+    lastWinners,
+    refreshState,
+    adminStartRound,
+    adminPause,
+    adminResume,
+    adminExtend,
+    adminNextPrompt,
+    adminEndRound
   } = useSocket();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('controls');
   const [loading, setLoading] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [targetRound, setTargetRound] = useState<number>(1);
+  const [controlsView, setControlsView] = useState<'controls' | number>('controls');
 
   // Data states
   const [teams, setTeams] = useState<Team[]>([]);
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  const [bidHistory, setBidHistory] = useState<Bid[]>([]);
+
+  useEffect(() => {
+    setTargetRound(gameStatus === 'round_ended' && hasNextRound ? currentRound + 1 : currentRound || 1);
+  }, [currentRound, gameStatus, hasNextRound]);
 
   // Team creation
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
@@ -79,67 +108,110 @@ export const AdminPage: React.FC = () => {
     setTimeout(() => setNotification(null), 3500);
   };
 
-  const fetchAdminData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [teamsRes, promptsRes, configRes, leadRes] = await Promise.allSettled([
-        api.listTeams(),
-        api.listPrompts(),
-        api.getConfig(),
-        api.getLeaderboard()
-      ]);
-
-      if (teamsRes.status === 'fulfilled' && teamsRes.value.success) {
-        setTeams(teamsRes.value.teams);
-      }
-      if (promptsRes.status === 'fulfilled' && promptsRes.value.success) {
-        setPrompts(promptsRes.value.prompts);
-      }
-      if (configRes.status === 'fulfilled' && configRes.value.success) {
-        setConfig(configRes.value.config);
-      }
-      if (leadRes.status === 'fulfilled' && leadRes.value.success) {
-        setLeaderboard(leadRes.value.leaderboard);
-        const map: Record<number, number> = {};
-        leadRes.value.leaderboard.forEach((e) => {
-          if (e.judgeScore !== null && e.judgeScore !== undefined) {
-            map[e.teamId] = e.judgeScore;
-          }
-        });
-        setJudgeScores(map);
-      }
-    } catch {
-      showMsg('error', 'Error syncing admin data');
-    } finally {
-      setLoading(false);
+  const adminRead = useRef<Promise<void> | null>(null);
+  const adminRefreshQueued = useRef(false);
+  const fetchAdminData = useCallback((): Promise<void> => {
+    if (adminRead.current) {
+      adminRefreshQueued.current = true;
+      return adminRead.current;
     }
+    adminRead.current = (async () => {
+      setLoading(true);
+      try {
+        const [teamsRes, promptsRes, configRes, leadRes, historyRes] = await Promise.allSettled([
+          api.listTeams(),
+          api.listPrompts(),
+          api.getConfig(),
+          api.getLeaderboard(),
+          api.listBids()
+        ]);
+
+        const failed = [teamsRes, promptsRes, configRes, leadRes, historyRes].find((result) => result.status === 'rejected');
+        if (failed?.status === 'rejected') {
+          showMsg('error', failed.reason instanceof Error ? failed.reason.message : 'Admin data could not be loaded');
+        }
+
+        if (historyRes.status === 'fulfilled' && historyRes.value.success) {
+          setBidHistory(historyRes.value.bids);
+        }
+        if (teamsRes.status === 'fulfilled' && teamsRes.value.success) {
+          setTeams(teamsRes.value.teams);
+        }
+        if (promptsRes.status === 'fulfilled' && promptsRes.value.success) {
+          setPrompts(promptsRes.value.prompts);
+        }
+        if (configRes.status === 'fulfilled' && configRes.value.success) {
+          setConfig(configRes.value.config);
+        }
+        if (leadRes.status === 'fulfilled' && leadRes.value.success) {
+          setLeaderboard(leadRes.value.leaderboard);
+          const map: Record<number, number> = {};
+          leadRes.value.leaderboard.forEach((e) => {
+            if (e.judgeScore !== null && e.judgeScore !== undefined) {
+              map[e.teamId] = e.judgeScore;
+            }
+          });
+          setJudgeScores(map);
+        }
+      } catch {
+        showMsg('error', 'Error syncing admin data');
+      } finally {
+        setLoading(false);
+      }
+    })().finally(() => {
+      adminRead.current = null;
+      if (adminRefreshQueued.current) {
+        adminRefreshQueued.current = false;
+        queueMicrotask(() => { void fetchAdminData(); });
+      }
+    });
+    return adminRead.current;
   }, []);
 
   useEffect(() => {
     fetchAdminData();
   }, [fetchAdminData]);
 
+  useEffect(() => {
+    if (!socket) return;
+    const refresh = () => { void fetchAdminData(); };
+    const reset = () => {
+      setBidHistory([]);
+      refresh();
+    };
+    const events = ['connect', 'prompt:results', 'round:ended', 'leaderboard:update', 'config:updated'];
+    events.forEach((event) => socket.on(event, refresh));
+    socket.on('game:reset', reset);
+    return () => {
+      events.forEach((event) => socket.off(event, refresh));
+      socket.off('game:reset', reset);
+    };
+  }, [socket, fetchAdminData]);
+
   // Round operations
   const handleStartRound = async (roundNum?: number) => {
+    const r = roundNum || targetRound || 1;
     try {
-      const res = await api.startRound(roundNum);
-      if (res.success) {
-        showMsg('success', `Round ${res.round} started`);
-        fetchAdminData();
-        refreshState();
-      }
+      setLoading(true);
+      const result = await adminStartRound(r);
+      if (!result.success) throw new Error(result.message || 'Failed to start round');
+      showMsg('success', `Round ${r} started`);
+      setControlsView('controls');
+      setTargetRound(r);
+      await fetchAdminData();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to start round');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handlePause = async () => {
     try {
-      const res = await api.pauseRound();
-      if (res.success) {
-        showMsg('success', 'Round paused');
-        refreshState();
-      }
+      const result = await adminPause();
+      if (!result.success) throw new Error(result.message || 'Action failed');
+      showMsg('success', 'Round timer paused');
+      refreshState();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to pause');
     }
@@ -147,11 +219,10 @@ export const AdminPage: React.FC = () => {
 
   const handleResume = async () => {
     try {
-      const res = await api.resumeRound();
-      if (res.success) {
-        showMsg('success', 'Round resumed');
-        refreshState();
-      }
+      const result = await adminResume();
+      if (!result.success) throw new Error(result.message || 'Action failed');
+      showMsg('success', 'Round timer resumed');
+      refreshState();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to resume');
     }
@@ -159,39 +230,36 @@ export const AdminPage: React.FC = () => {
 
   const handleExtend = async (seconds: number) => {
     try {
-      const res = await api.extendRound(seconds);
-      if (res.success) {
-        showMsg('success', `Extended by ${seconds}s`);
-        refreshState();
-      }
+      const result = await adminExtend(seconds);
+      if (!result.success) throw new Error(result.message || 'Action failed');
+      showMsg('success', `Extended by ${seconds}s`);
+      refreshState();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to extend');
     }
   };
 
   const handleNextPrompt = async () => {
-    if (!window.confirm('Force advance to next prompt? This awards the winning bids.')) return;
+    if (gameStatus !== 'round_ended' && !isExpired && !window.confirm(hasNextRound ? 'Close this round early and open the next prompt? This awards the current winning bids.' : 'Close the final round early and award the winning bids?')) return;
     try {
-      const res = await api.nextPrompt();
-      if (res.success) {
-        showMsg('success', res.message || 'Advanced to next prompt');
-        fetchAdminData();
-        refreshState();
-      }
+      const result = await adminNextPrompt();
+      if (!result.success) throw new Error(result.message || 'Action failed');
+      showMsg('success', result.message || 'Opened the next prompt round');
+      fetchAdminData();
+      refreshState();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to advance prompt');
     }
   };
 
   const handleEndRound = async () => {
-    if (!window.confirm('Force end the round?')) return;
+    if (!window.confirm('Close this round and award its winners? The next prompt will wait for you to click Next.')) return;
     try {
-      const res = await api.endRound();
-      if (res.success) {
-        showMsg('success', 'Round ended');
-        fetchAdminData();
-        refreshState();
-      }
+      const result = await adminEndRound();
+      if (!result.success) throw new Error(result.message || 'Action failed');
+      showMsg('success', 'Round ended');
+      fetchAdminData();
+      refreshState();
     } catch (err: unknown) {
       showMsg('error', err instanceof Error ? err.message : 'Failed to end round');
     }
@@ -362,6 +430,7 @@ export const AdminPage: React.FC = () => {
       const res = await api.resetGame({ wipeTeams, wipePrompts });
       if (res.success) {
         showMsg('success', 'Game reset to waiting state');
+        setBidHistory([]);
         fetchAdminData();
         refreshState();
       }
@@ -369,6 +438,42 @@ export const AdminPage: React.FC = () => {
       showMsg('error', err instanceof Error ? err.message : 'Error resetting game');
     }
   };
+
+  const roundDefinitions = promptRounds(prompts, capturedRounds);
+  const totalRounds = roundDefinitions.length;
+  const roundList = roundDefinitions.map((round) => round.roundNumber);
+  const roundBidsHistory = groupRoundBids(bidHistory, bids, roundDefinitions);
+  const isPromptRunning = gameStatus === 'bidding' && !isExpired;
+  const isRoundOpen = gameStatus === 'bidding' || gameStatus === 'paused';
+  const canStartRound = totalRounds > 0 && (gameStatus === 'waiting' || (gameStatus === 'round_ended' && hasNextRound));
+  const canAdvance = currentRound > 0 && (isRoundOpen || (gameStatus === 'round_ended' && hasNextRound));
+
+  // Computed placed bids for selected round view
+  const selectedRoundBids = (() => {
+    if (typeof controlsView !== 'number') return [];
+    const r = controlsView;
+    const promptId = roundDefinitions.find((round) => round.roundNumber === r)?.promptId;
+    const mergedMap = new Map<string, Bid & { isAssigned?: boolean; promptTitle?: string }>();
+    const add = (bid: Bid) => mergedMap.set(`${bid.teamId}:${bid.promptId}`, { ...bid });
+    (roundBidsHistory[r] || []).forEach(add);
+    if (currentRound === r) bids.filter((bid) => bid.promptId === promptId).forEach(add);
+    teams.forEach((team) => {
+      const assignment = team.assignment;
+      if (!assignment || assignment.promptId !== promptId) return;
+      const key = `${team.id}:${assignment.promptId}`;
+      const existing = mergedMap.get(key);
+      mergedMap.set(key, {
+        ...existing, teamId: team.id, teamName: team.teamName,
+        promptId: assignment.promptId, bidMinutes: assignment.bidMinutes,
+        round: r, prompt: assignment.prompt, isAssigned: true
+      });
+    });
+    mergedMap.forEach((entry) => {
+      entry.promptTitle = entry.prompt?.title || prompts.find((prompt) => prompt.id === entry.promptId)?.title || `Prompt #${entry.promptId}`;
+    });
+
+    return Array.from(mergedMap.values()).sort((a, b) => a.bidMinutes - b.bidMinutes);
+  })();
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
@@ -453,11 +558,14 @@ export const AdminPage: React.FC = () => {
       {/* TAB 1: CONTROLS */}
       {activeTab === 'controls' && (
         <div className="space-y-6">
+          {/* Synchronized Bidding Countdown */}
+          <BiddingTimerBadge />
+
           {/* Status Row */}
           <div className="p-4 rounded-xl bg-surface-100 border border-surface-border grid grid-cols-2 sm:grid-cols-4 gap-4 font-mono text-xs">
             <div>
               <span className="text-slate-500 block">GAME STATUS</span>
-              <span className="text-base font-bold text-white uppercase">{gameStatus}</span>
+              <span className="text-base font-bold text-white uppercase">{gameStatus === 'round_ended' ? 'Round complete' : gameStatus}</span>
             </div>
             <div>
               <span className="text-slate-500 block">ROUND</span>
@@ -465,7 +573,15 @@ export const AdminPage: React.FC = () => {
             </div>
             <div>
               <span className="text-slate-500 block">TIME LEFT</span>
-              <span className="text-base font-bold text-[#D4AF37]">{secondsRemaining}s</span>
+              {isPaused ? (
+                <span className="text-base font-bold text-amber-400">
+                  {secondsRemaining}s <span className="text-[10px] text-amber-300 uppercase">(PAUSED)</span>
+                </span>
+              ) : (gameStatus === 'bidding' || gameStatus === 'round_ended') && secondsRemaining <= 0 ? (
+                <span className="text-base font-bold text-rose-400">EXPIRED</span>
+              ) : (
+                <span className="text-base font-bold text-[#D4AF37]">{secondsRemaining}s</span>
+              )}
             </div>
             <div>
               <span className="text-slate-500 block">ACTIVE PROMPT</span>
@@ -475,77 +591,482 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Operational Buttons */}
-          <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4 font-mono text-xs">
-            <span className="font-bold text-white uppercase block">Auction Actions</span>
+          {gameStatus === 'round_ended' && (
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm text-amber-200">
+              Round {currentRound} is complete. {hasNextRound ? 'The prompt and bids stay here until you click Next.' : 'All prompt rounds are complete.'}
+            </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Round Navigation Bar */}
+          <div className="p-4 rounded-xl bg-surface-100 border border-surface-border flex items-center justify-between gap-3 font-mono text-xs flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Controls Button */}
               <button
-                onClick={() => handleStartRound(1)}
-                disabled={gameStatus === 'bidding' || gameStatus === 'paused'}
-                className="py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold uppercase transition-colors disabled:opacity-40"
+                onClick={() => setControlsView('controls')}
+                className={`px-3.5 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                  controlsView === 'controls'
+                    ? 'bg-[#721426] text-white border-[#D45B70]/60 shadow-sm'
+                    : 'bg-surface-200 text-slate-300 border-surface-border hover:bg-surface-50 hover:text-white'
+                }`}
               >
-                Start Round 1
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Controls</span>
+                {isPromptRunning && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" title="Bidding in progress" />
+                )}
               </button>
 
-              <button
-                onClick={() => handleStartRound(2)}
-                disabled={gameStatus === 'bidding' || gameStatus === 'paused'}
-                className="py-2.5 px-4 rounded-lg bg-surface-50 hover:bg-surface-200 text-[#E5C158] border border-[#D4AF37]/30 font-bold uppercase transition-colors disabled:opacity-40"
-              >
-                Start Round 2
-              </button>
+              <div className="h-4 w-px bg-surface-border mx-1" />
 
-              {gameStatus === 'paused' ? (
-                <button
-                  onClick={handleResume}
-                  className="py-2.5 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold uppercase transition-colors"
-                >
-                  Resume Timer
-                </button>
-              ) : (
-                <button
-                  onClick={handlePause}
-                  disabled={gameStatus !== 'bidding'}
-                  className="py-2.5 px-4 rounded-lg bg-surface-50 hover:bg-surface-200 text-slate-300 border border-surface-border font-bold uppercase transition-colors disabled:opacity-40"
-                >
-                  Pause Timer
-                </button>
-              )}
+              <span className="text-slate-400 font-bold uppercase flex items-center gap-1.5 mr-1 text-[11px]">
+                <History className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>Rounds:</span>
+              </span>
+
+              {roundList.map((r) => {
+                const isSelected = controlsView === r;
+                const isLive = currentRound === r && isPromptRunning;
+                const hasData =
+                  (roundBidsHistory[r] && roundBidsHistory[r].length > 0) ||
+                  teams.some((t) => t.assignment?.promptId === roundDefinitions.find((round) => round.roundNumber === r)?.promptId);
+
+                return (
+                  <button
+                    key={r}
+                    onClick={() => setControlsView(r)}
+                    className={`px-3 py-1.5 rounded-lg border font-bold transition-all flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-[#D4AF37] text-black border-[#D4AF37] shadow-sm'
+                        : 'bg-surface-200 text-slate-300 border-surface-border hover:bg-surface-50 hover:text-white'
+                    }`}
+                  >
+                    <span>Round {r} · Prompt {r}</span>
+                    {isLive ? (
+                      <span
+                        className={`w-2 h-2 rounded-full ${isSelected ? 'bg-black' : 'bg-emerald-400'} animate-pulse`}
+                        title="Bidding active"
+                      />
+                    ) : hasData ? (
+                      <span
+                        className={`text-[9px] px-1 py-0.5 rounded font-normal ${
+                          isSelected ? 'bg-black/20 text-black' : 'bg-surface-100 text-slate-400'
+                        }`}
+                      >
+                        Bids
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-surface-border">
-              {/* Extend time */}
-              <div className="flex gap-1.5">
-                {[15, 30, 60].map((s) => (
+            {controlsView !== 'controls' && (
+              <button
+                onClick={() => setControlsView('controls')}
+                className="px-3 py-1.5 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border font-bold text-xs flex items-center gap-1.5 transition-colors"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Return to Controls</span>
+              </button>
+            )}
+          </div>
+
+          {/* VIEW A: CONTROLS VIEW */}
+          {controlsView === 'controls' && (
+            <>
+              {/* Operational Buttons */}
+              <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4 font-mono text-xs">
+                <div className="flex items-center justify-between border-b border-surface-border pb-2.5">
+                  <span className="font-bold text-white uppercase block">
+                    Round Actions {currentRound > 0 ? `(Active: Round ${currentRound})` : ''}
+                  </span>
+                  <span className="text-slate-400 text-[11px]">
+                    Status: <strong className={`uppercase ${isPromptRunning ? 'text-emerald-400' : 'text-white'}`}>{gameStatus}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2 flex items-center gap-2">
+                    <div className={`flex items-center gap-2 bg-surface-200 border border-surface-border rounded-lg px-3 py-2 shrink-0 ${isPromptRunning ? 'opacity-50' : ''}`}>
+                      <span className="text-slate-400 font-bold uppercase text-[11px]">Round:</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalRounds}
+                        value={targetRound}
+                        readOnly
+                        disabled
+                        className="w-14 px-2 py-1 bg-surface-100 border border-surface-border rounded text-center text-white font-bold text-xs focus:outline-none focus:border-[#D4AF37] disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-[10px] text-slate-500">/ {totalRounds}</span>
+                    </div>
+
+                    <button
+                      onClick={() => handleStartRound(targetRound)}
+                      disabled={loading || !canStartRound}
+                      className="flex-1 py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+                      title={`Round ${targetRound} opens Prompt ${targetRound}`}
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>
+                        {isRoundOpen ? `Round ${currentRound} · Prompt ${currentRound}`
+                          : !hasNextRound && currentRound > 0 ? 'All rounds complete' : `Start Round ${targetRound} · Prompt ${targetRound}`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {gameStatus === 'paused' ? (
+                    <button
+                      onClick={handleResume}
+                      disabled={loading}
+                      className="py-2.5 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold uppercase transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Resume Timer</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePause}
+                      disabled={loading || !isPromptRunning}
+                      className="py-2.5 px-4 rounded-lg bg-surface-50 hover:bg-surface-200 text-slate-300 border border-surface-border font-bold uppercase transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Pause className="w-3.5 h-3.5" />
+                      <span>Pause Timer</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-surface-border">
+                  {/* Extend time */}
+                  <div className="flex gap-1.5">
+                    {[15, 30, 60].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => handleExtend(s)}
+                        disabled={loading || !isRoundOpen || isExpired}
+                        className="flex-1 py-2 bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border rounded-lg disabled:opacity-40 transition-colors"
+                      >
+                        +{s}s
+                      </button>
+                    ))}
+                  </div>
+
                   <button
-                    key={s}
-                    onClick={() => handleExtend(s)}
-                    disabled={gameStatus !== 'bidding' && gameStatus !== 'paused'}
-                    className="flex-1 py-2 bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border rounded-lg disabled:opacity-40"
+                    onClick={handleNextPrompt}
+                    disabled={loading || !canAdvance}
+                    className="py-2 px-4 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border font-bold uppercase transition-colors disabled:opacity-40"
                   >
-                    +{s}s
+                    {hasNextRound ? `Next · Round ${currentRound + 1} / Prompt ${currentRound + 1}` : 'Finish Final Round'}
                   </button>
-                ))}
+
+                  <button
+                    onClick={handleEndRound}
+                    disabled={loading || !isRoundOpen}
+                    className="py-2 px-4 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold uppercase transition-colors disabled:opacity-40"
+                  >
+                    End Current Round
+                  </button>
+                </div>
               </div>
 
-              <button
-                onClick={handleNextPrompt}
-                disabled={gameStatus !== 'bidding' && gameStatus !== 'paused'}
-                className="py-2 px-4 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border font-bold uppercase transition-colors disabled:opacity-40"
-              >
-                Force Next Prompt
-              </button>
+              {/* Placed Bids Live Feed */}
+              <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4 font-mono text-xs">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded bg-surface-50 text-brand-emerald">
+                      <TrendingDown className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white uppercase text-sm">
+                          Placed Bids Till Now
+                        </span>
+                        {isPromptRunning && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            LIVE
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-slate-400 text-[11px]">
+                        {currentPrompt
+                          ? `Active for Prompt #${currentPrompt.displayOrder || currentPrompt.id}: ${currentPrompt.title}`
+                          : 'Live incoming bids for the current prompt'}
+                      </span>
+                    </div>
+                  </div>
 
-              <button
-                onClick={handleEndRound}
-                disabled={gameStatus !== 'bidding' && gameStatus !== 'paused'}
-                className="py-2 px-4 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold uppercase transition-colors disabled:opacity-40"
-              >
-                End Current Round
-              </button>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded bg-surface-200 text-slate-300 border border-surface-border font-bold">
+                      {bids.length} {bids.length === 1 ? 'Bid' : 'Bids'} Placed
+                    </span>
+                    <button
+                      onClick={() => refreshState()}
+                      className="p-1.5 rounded bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border transition-colors"
+                      title="Refresh bids"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bids Table / Empty State */}
+                {bids.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 space-y-1">
+                    <Clock className="w-6 h-6 mx-auto opacity-40 mb-2" />
+                    <p className="font-bold text-slate-400">No bids placed yet</p>
+                    <p className="text-[11px]">
+                      {gameStatus === 'bidding'
+                        ? 'Waiting for teams to submit their time commitments...'
+                        : 'Bids will appear here in real-time once round bidding begins.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-surface-border overflow-hidden bg-surface-200/50">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-surface-200 text-slate-400 border-b border-surface-border uppercase">
+                          <tr>
+                            <th className="py-2.5 px-3 w-14">Rank</th>
+                            <th className="py-2.5 px-3">Team</th>
+                            <th className="py-2.5 px-3 text-center">Bid Time</th>
+                            <th className="py-2.5 px-3 text-center">Multiplier</th>
+                            <th className="py-2.5 px-3 text-center">Boost</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                            <th className="py-2.5 px-3 text-right">Submitted</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-border">
+                          {bids.map((b, idx) => {
+                            const slots = availableSlots;
+                            const isWinning = gameStatus === 'round_ended'
+                              ? Boolean(lastWinners?.some((winner) => winner.teamId === b.teamId)) : idx < slots;
+                            const teamName =
+                              b.teamName ||
+                              teams.find((t) => t.id === b.teamId)?.teamName ||
+                              `Team #${b.teamId}`;
+                            const m = calculateMultiplier(
+                              b.bidMinutes,
+                              currentRound || b.round || 1,
+                              config?.baseTime || 120,
+                              config?.minBid || 30
+                            );
+                            const boost = calculateBoostPercentage(m);
+
+                            return (
+                              <tr
+                                key={b.teamId}
+                                className={`transition-colors ${
+                                  isWinning
+                                    ? 'bg-emerald-500/5 hover:bg-emerald-500/10'
+                                    : 'hover:bg-surface-50/50'
+                                }`}
+                              >
+                                <td className="py-2.5 px-3 font-bold">
+                                  <span
+                                    className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
+                                      isWinning
+                                        ? 'bg-emerald-500 text-slate-950 font-black'
+                                        : 'bg-surface-100 text-slate-400'
+                                    }`}
+                                  >
+                                    {idx + 1}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-bold text-white">
+                                  {teamName}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className="font-bold text-[#D4AF37]">
+                                    {b.bidMinutes}m
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-brand-cyan font-bold">
+                                  {m.toFixed(3)}x
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-emerald-400">
+                                  +{boost.toFixed(1)}%
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  {isWinning ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                                      {gameStatus === 'round_ended' ? 'Selected' : `Qualifying (Top ${slots})`}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-surface-100 text-slate-400 border border-surface-border">
+                                      Cutoff
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-slate-400 text-[11px]">
+                                  {b.submittedAt
+                                    ? new Date(b.submittedAt).toLocaleTimeString()
+                                    : 'Just now'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* If Last Winners Exist & No Active Bids */}
+                {lastWinners && lastWinners.length > 0 && bids.length === 0 && (
+                  <div className="pt-3 border-t border-surface-border">
+                    <span className="text-[11px] text-slate-400 font-bold uppercase block mb-2">
+                      Winners of Previous Prompt:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {lastWinners.map((w, i) => (
+                        <div
+                          key={w.teamId}
+                          className="p-2.5 rounded-lg bg-surface-200 border border-emerald-500/30 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center">
+                              {i + 1}
+                            </span>
+                            <span className="font-bold text-white">{w.teamName}</span>
+                          </div>
+                          <span className="text-[#D4AF37] font-bold">
+                            {w.bidMinutes}m ({Number(w.multiplier).toFixed(3)}x)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* VIEW B: ROUND BIDS LIST (No statistics, clean list of placed bids & selection status) */}
+          {typeof controlsView === 'number' && (
+            <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4 font-mono text-xs">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-sm uppercase">
+                      Round {controlsView} · Prompt {controlsView} Bids
+                    </h3>
+                    {currentRound === controlsView && isPromptRunning && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        LIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-400 text-[11px] mt-0.5">
+                    {prompts.find((prompt) => prompt.id === roundDefinitions.find((round) => round.roundNumber === controlsView)?.promptId)?.title || `Prompt ${controlsView}`} — bids and selection outcomes for this round only
+                  </p>
+                </div>
+
+                <span className="px-2.5 py-1 rounded bg-surface-200 text-slate-300 border border-surface-border font-bold">
+                  {selectedRoundBids.length} {selectedRoundBids.length === 1 ? 'Bid' : 'Bids'} Placed
+                </span>
+              </div>
+
+              {selectedRoundBids.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 space-y-2">
+                  <Clock className="w-8 h-8 mx-auto opacity-30 mb-1" />
+                  <p className="font-bold text-slate-300 text-sm">No bids placed for Round {controlsView}</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    Bids will appear here once teams place their bids during Round {controlsView}.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-surface-border overflow-hidden bg-surface-200/50">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead className="bg-surface-200 text-slate-400 border-b border-surface-border uppercase">
+                        <tr>
+                          <th className="py-2.5 px-3 w-14">Rank</th>
+                          <th className="py-2.5 px-3">Team</th>
+                          <th className="py-2.5 px-3">Problem / Prompt</th>
+                          <th className="py-2.5 px-3 text-center">Bid Time</th>
+                          <th className="py-2.5 px-3 text-center">Multiplier</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-right">Timestamp</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-border">
+                        {selectedRoundBids.map((b, idx) => {
+                          const teamName =
+                            b.teamName ||
+                            teams.find((t) => t.id === b.teamId)?.teamName ||
+                            `Team #${b.teamId}`;
+                          const isSelected = Boolean(
+                            b.isAssigned ||
+                            (currentRound === controlsView && isPromptRunning && b.promptId === currentPrompt?.id &&
+                              bids.some((liveBid, liveIndex) => liveBid.teamId === b.teamId && liveIndex < availableSlots))
+                          );
+                          const storedMultiplier = teams.find((team) => team.id === b.teamId && team.assignment?.promptId === b.promptId)?.assignment?.multiplier;
+                          const m = storedMultiplier ?? calculateMultiplier(
+                            b.bidMinutes,
+                            controlsView,
+                            config?.baseTime || 120,
+                            config?.minBid || 30
+                          );
+                          const boost = calculateBoostPercentage(Number(m));
+
+                          return (
+                            <tr
+                              key={`${b.teamId}-${idx}`}
+                              className={`transition-colors ${
+                                isSelected ? 'bg-emerald-500/5 hover:bg-emerald-500/10' : 'hover:bg-surface-50/50'
+                              }`}
+                            >
+                              <td className="py-2.5 px-3 font-bold">
+                                <span
+                                  className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
+                                    isSelected
+                                      ? 'bg-emerald-500 text-slate-950 font-black'
+                                      : 'bg-surface-100 text-slate-400'
+                                  }`}
+                                >
+                                  {idx + 1}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-white">
+                                {teamName}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-300 truncate max-w-xs">
+                                {b.promptTitle || b.prompt?.title || '--'}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-[#D4AF37]">
+                                {b.bidMinutes}m
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className="text-brand-cyan font-bold">{Number(m).toFixed(3)}x</span>
+                                <span className="text-slate-400 text-[10px] ml-1">(+{boost.toFixed(0)}%)</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {isSelected ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Selected</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] bg-surface-100 text-slate-400 border border-surface-border">
+                                    Not Selected
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-slate-400 text-[11px]">
+                                {b.submittedAt ? new Date(b.submittedAt).toLocaleTimeString() : 'Logged'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
       )}
 

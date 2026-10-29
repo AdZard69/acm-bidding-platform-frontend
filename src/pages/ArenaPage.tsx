@@ -7,6 +7,7 @@ import {
   TrendingDown
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
+import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
 import { calculateMultiplier, calculateBoostPercentage } from '../utils/multiplier';
 
 export const ArenaPage: React.FC = () => {
@@ -14,8 +15,13 @@ export const ArenaPage: React.FC = () => {
     isConnected,
     gameStatus,
     currentRound,
+    hasNextRound,
     currentPrompt,
     secondsRemaining,
+    isPaused,
+    isExpired,
+    biddingConfig,
+    availableSlots,
     bids,
     lastWinners,
     refreshState
@@ -23,13 +29,6 @@ export const ArenaPage: React.FC = () => {
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  useEffect(() => {
-    refreshState();
-    if (!isConnected) {
-      const timer = setInterval(refreshState, 1500);
-      return () => clearInterval(timer);
-    }
-  }, [isConnected, refreshState]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -75,6 +74,8 @@ export const ArenaPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <BiddingTimerBadge compact />
+
           <div className="px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-border font-mono text-xs text-slate-300">
             STATUS: <strong className="text-white uppercase">{gameStatus}</strong>
             {currentRound > 0 && <span className="ml-2 text-brand-amber">• R{currentRound}</span>}
@@ -98,21 +99,37 @@ export const ArenaPage: React.FC = () => {
           <div className="p-8 rounded-xl bg-surface-100 border border-surface-border flex flex-col items-center justify-center">
             <span className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5" />
-              <span>Bidding Countdown</span>
+              <span>{isPaused ? 'Timer Paused' : 'Authoritative Countdown'}</span>
             </span>
 
             <div
               className={`text-6xl sm:text-8xl font-black font-mono tracking-tight my-2 ${
-                isUrgent ? 'text-rose-400 animate-pulse' : isWarning ? 'text-amber-400' : 'text-white'
+                isPaused
+                  ? 'text-amber-400'
+                  : isUrgent
+                  ? 'text-rose-400 animate-pulse'
+                  : isWarning
+                  ? 'text-amber-400'
+                  : 'text-white'
               }`}
             >
               {formatTime(secondsRemaining)}
             </div>
 
+            {isPaused && (
+              <div className="text-xs font-mono px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold uppercase mt-1">
+                Round Paused
+              </div>
+            )}
+
             <div className="text-xs font-mono text-slate-400 mt-2">
               Total Bids: <strong className="text-white">{bids.length}</strong>
             </div>
           </div>
+
+          {gameStatus === 'round_ended' && <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm font-mono">
+            Round {currentRound} complete. {hasNextRound ? 'Waiting for the admin to open the next prompt.' : 'All prompt rounds are complete.'}
+          </div>}
 
           {/* Active Prompt Card */}
           <div className="flex-1 p-6 rounded-xl bg-surface-100 border border-surface-border flex flex-col justify-between">
@@ -120,9 +137,9 @@ export const ArenaPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="px-2.5 py-0.5 rounded bg-surface-50 text-brand-cyan border border-surface-border font-bold">
-                    PROMPT #{currentPrompt.displayOrder || currentPrompt.id}
+                    ROUND {currentRound} · PROMPT {currentRound}
                   </span>
-                  <span className="text-slate-400">3 Winning Slots</span>
+                  <span className="text-slate-400">{biddingConfig.slotsPerPrompt} Winning Slots</span>
                 </div>
 
                 <h2 className="text-xl sm:text-2xl font-bold font-mono text-white">
@@ -140,8 +157,8 @@ export const ArenaPage: React.FC = () => {
             )}
 
             <div className="mt-4 pt-3 border-t border-surface-border flex justify-between text-xs font-mono text-slate-400">
-              <span>Min Bid: 30m</span>
-              <span>Max Time: 120m</span>
+              <span>Min Bid: {biddingConfig.minBid}m</span>
+              <span>Max Time: {biddingConfig.baseTime}m</span>
               <span>Anti-Collision: Unique minute bids</span>
             </div>
           </div>
@@ -168,8 +185,10 @@ export const ArenaPage: React.FC = () => {
               </div>
             ) : (
               bids.map((b, idx) => {
-                const isWinning = idx < 3;
-                const multiplier = calculateMultiplier(b.bidMinutes, currentRound || 1);
+                const isWinning = gameStatus === 'round_ended'
+                  ? Boolean(lastWinners?.some((winner) => winner.teamId === b.teamId)) : idx < availableSlots;
+                const multiplier = (gameStatus === 'round_ended' ? lastWinners?.find((winner) => winner.teamId === b.teamId)?.multiplier : undefined)
+                  ?? calculateMultiplier(b.bidMinutes, currentRound || 1, biddingConfig.baseTime, biddingConfig.minBid);
                 const boost = calculateBoostPercentage(multiplier);
 
                 return (
