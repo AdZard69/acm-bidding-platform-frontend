@@ -1,335 +1,252 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import {
-  GameStatus,
-  Prompt,
-  Bid,
-  WinnerResult,
-  PromptResultsData,
-  RoundEndedSummary,
-  AssignmentReceivedData,
-  Score
+  Bid, WinnerResult, RoundEndedSummary, AssignmentReceivedData,
+  Score, CurrentBiddingStateResponse
 } from '../types';
 import { useAuth } from './AuthContext';
-import { api } from '../api/client';
+import { api, API_BASE } from '../api/client';
+import { BiddingTimer } from '../utils/biddingTimer';
 
-const DEFAULT_SOCKET_URL =
-  typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
-    ? 'https://acm-bidding-platform-backend.onrender.com'
-    : 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || new URL(API_BASE, window.location.origin).origin;
+type ActionResult = { success: boolean; message?: string };
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || DEFAULT_SOCKET_URL;
+const initialState: CurrentBiddingStateResponse = {
+  success: true, status: 'waiting', currentRound: 0, currentPrompt: null,
+  rounds: [], totalRounds: 0, hasNextRound: false, nextRoundNumber: null,
+  availableSlots: 0, secondsRemaining: 0, remainingMs: 0, durationSeconds: 60, timerId: null,
+  startTime: null, endsAt: null, isPaused: false, hasExpired: true, bids: [],
+  config: { baseTime: 120, minBid: 30, slotsPerPrompt: 3, bidDurationSeconds: 60 }
+};
 
-interface SocketContextType {
-  socket: Socket | null;
-  isConnected: boolean;
-  gameStatus: GameStatus;
-  currentRound: number;
-  currentPrompt: Prompt | null;
-  secondsRemaining: number;
-  bids: Bid[];
-  lastWinners: WinnerResult[] | null;
-  myAssignment: AssignmentReceivedData | null;
-  myScore: Score | null;
-  roundSummary: RoundEndedSummary | null;
-  refreshState: () => Promise<void>;
-  // Team actions
-  placeBid: (bidMinutes: number) => Promise<{ success: boolean; message?: string }>;
-  updateBid: (bidMinutes: number) => Promise<{ success: boolean; message?: string }>;
-  // Admin actions
-  adminStartRound: (roundNumber?: number) => Promise<{ success: boolean; message?: string }>;
-  adminPause: () => Promise<{ success: boolean }>;
-  adminResume: () => Promise<{ success: boolean }>;
-  adminExtend: (extraSeconds: number) => Promise<{ success: boolean }>;
-  adminNextPrompt: () => Promise<{ success: boolean }>;
-  adminEndRound: () => Promise<{ success: boolean }>;
-}
-
-const SocketContext = createContext<SocketContextType | undefined>(undefined);
-
-export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token } = useAuth();
+function useBiddingState() {
+  const { token, user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-
-  // Live game states
-  const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
-  const [currentRound, setCurrentRound] = useState<number>(0);
-  const [currentPrompt, setCurrentPrompt] = useState<Prompt | null>(null);
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
-  const [bids, setBids] = useState<Bid[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [state, setState] = useState(initialState);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [lastWinners, setLastWinners] = useState<WinnerResult[] | null>(null);
   const [myAssignment, setMyAssignment] = useState<AssignmentReceivedData | null>(null);
   const [myScore, setMyScore] = useState<Score | null>(null);
   const [roundSummary, setRoundSummary] = useState<RoundEndedSummary | null>(null);
+  const [isTimerSynced, setIsTimerSynced] = useState(false);
+  const stateRef = useRef(state);
+  const countdown = useRef(new BiddingTimer());
+  const eventVersion = useRef(0);
+  const privateEventVersion = useRef(0);
+  const requestVersion = useRef(0);
+  const socketRef = useRef<Socket | null>(null);
+  const latencyMs = useRef(0);
+  const adminPending = useRef(false);
 
-  // Sync state via REST API as baseline
-  const refreshState = useCallback(async () => {
-    try {
-      const res = await api.getCurrentBiddingState();
-      if (res.success) {
-        if (res.status) setGameStatus(res.status as GameStatus);
-        if (res.currentRound !== undefined) setCurrentRound(res.currentRound);
-        if (res.currentPrompt) setCurrentPrompt(res.currentPrompt);
-        if (res.secondsRemaining !== undefined) setSecondsRemaining(res.secondsRemaining);
-        if (res.bids) setBids(res.bids);
-      }
-    } catch {
-      // Ignore initial sync failure if server not ready
+  const applyState = useCallback((next: CurrentBiddingStateResponse) => {
+    const previous = stateRef.current;
+    stateRef.current = next;
+    countdown.current.apply(next, latencyMs.current);
+    setState(next);
+    setSecondsRemaining(countdown.current.secondsRemaining());
+    setIsTimerSynced(true);
+    if (previous.timerId !== next.timerId && next.status === 'bidding') {
+      setLastWinners(null);
+      setRoundSummary(null);
+    }
+    if (next.status === 'round_ended') {
+      setLastWinners(next.winners || []);
+      setRoundSummary(next.summary || null);
+    }
+    if (next.status === 'waiting') {
+      privateEventVersion.current++;
+      setMyAssignment(null);
+      setMyScore(null);
+      setLastWinners(null);
+      setRoundSummary(null);
     }
   }, []);
 
-  useEffect(() => {
-    refreshState();
-    if (!isConnected) {
-      const interval = setInterval(refreshState, 2000);
-      return () => clearInterval(interval);
+  // A single snapshot supplies prompt, bids, settings and timer together. Never
+  // let a slow REST response overwrite a newer socket event or another login.
+  const refreshState = useCallback(async () => {
+    const request = ++requestVersion.current;
+    const version = eventVersion.current;
+    const privateVersion = privateEventVersion.current;
+    const [publicResult, privateResult] = await Promise.allSettled([
+      api.getCurrentBiddingState(),
+      user?.role === 'team' ? api.getMyAssignment() : Promise.resolve(null)
+    ]);
+    if (request !== requestVersion.current) return;
+    if (version === eventVersion.current && publicResult.status === 'fulfilled' && publicResult.value.success) applyState(publicResult.value);
+    if (privateVersion === privateEventVersion.current && privateResult.status === 'fulfilled' && privateResult.value?.success) {
+      const { assignment, score } = privateResult.value;
+      setMyAssignment(assignment ? {
+        promptId: assignment.promptId, title: assignment.prompt?.title || '',
+        description: assignment.prompt?.description || '', bidMinutes: assignment.bidMinutes,
+        multiplier: Number(assignment.multiplier), codingTimeMinutes: assignment.bidMinutes, round: assignment.round
+      } : null);
+      setMyScore(score || null);
     }
-  }, [isConnected, refreshState]);
+  }, [applyState, user?.role, user?.teamId, token]);
 
   useEffect(() => {
-    if (!token) {
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-        setIsConnected(false);
-      }
-      return;
-    }
+    const ticker = setInterval(() => setSecondsRemaining(countdown.current.secondsRemaining()), 100);
+    return () => clearInterval(ticker);
+  }, []);
 
-    const newSocket = io(SOCKET_URL, {
-      auth: { token },
+  useEffect(() => {
+    setMyAssignment(null);
+    setMyScore(null);
+    setIsTimerSynced(false);
+    eventVersion.current++;
+    const connection = io(SOCKET_URL, {
+      auth: token ? { token } : {},
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000
+      reconnection: true, reconnectionDelay: 1000, reconnectionDelayMax: 5000
     });
+    socketRef.current = connection;
+    setSocket(connection);
+    let alive = true;
 
-    newSocket.on('connect', () => {
+    const ping = () => {
+      const sentAt = performance.now();
+      connection.timeout(5000).emit('time:sync', {}, (error: Error | null) => {
+        if (!error && alive) latencyMs.current = Math.max(0, (performance.now() - sentAt) / 2);
+      });
+    };
+    connection.on('connect', () => {
+      if (!alive) return;
       setIsConnected(true);
-      refreshState();
+      ping();
+      void refreshState();
     });
+    connection.on('disconnect', () => { if (alive) setIsConnected(false); });
+    connection.on('connect_error', () => { if (alive) setIsConnected(false); });
 
-    newSocket.on('disconnect', () => {
-      setIsConnected(false);
+    connection.on('game:status', (next: CurrentBiddingStateResponse) => {
+      eventVersion.current++;
+      applyState(next);
     });
-
-    // timer:tick
-    newSocket.on('timer:tick', (data: { secondsLeft: number; promptId?: number }) => {
-      setSecondsRemaining(data.secondsLeft);
+    connection.on('timer:tick', (timer: CurrentBiddingStateResponse) => {
+      const current = stateRef.current;
+      if (timer.timerId !== current.timerId || current.status !== 'bidding') return;
+      countdown.current.apply({ ...current, ...timer }, latencyMs.current);
+      setSecondsRemaining(countdown.current.secondsRemaining());
     });
-
-    // bid:new
-    newSocket.on('bid:new', (data: Bid) => {
-      setBids((prev) => {
-        const filtered = prev.filter((b) => b.teamId !== data.teamId);
-        return [...filtered, data].sort((a, b) => a.bidMinutes - b.bidMinutes);
-      });
-    });
-
-    // bid:updated
-    newSocket.on('bid:updated', (data: Bid) => {
-      setBids((prev) => {
-        const filtered = prev.filter((b) => b.teamId !== data.teamId);
-        return [...filtered, data].sort((a, b) => a.bidMinutes - b.bidMinutes);
-      });
-    });
-
-    // prompt:reveal
-    newSocket.on('prompt:reveal', (data: Prompt) => {
-      setCurrentPrompt(data);
-      setBids([]);
-      setLastWinners(null);
-      setGameStatus('bidding');
-    });
-
-    // prompt:results
-    newSocket.on('prompt:results', (data: PromptResultsData) => {
-      setLastWinners(data.winners);
-    });
-
-    // prompt:next
-    newSocket.on('prompt:next', () => {
-      setBids([]);
-    });
-
-    // round:started
-    newSocket.on('round:started', (data: { roundNumber: number }) => {
-      setCurrentRound(data.roundNumber);
-      setGameStatus('bidding');
-      setRoundSummary(null);
-      setBids([]);
-    });
-
-    // round:paused
-    newSocket.on('round:paused', (data: { secondsRemaining: number }) => {
-      setGameStatus('paused');
-      if (data?.secondsRemaining !== undefined) {
-        setSecondsRemaining(data.secondsRemaining);
-      }
-    });
-
-    // round:resumed
-    newSocket.on('round:resumed', (data: { secondsRemaining: number }) => {
-      setGameStatus('bidding');
-      if (data?.secondsRemaining !== undefined) {
-        setSecondsRemaining(data.secondsRemaining);
-      }
-    });
-
-    // round:ended
-    newSocket.on('round:ended', (data: { roundNumber: number; summary: RoundEndedSummary }) => {
-      setGameStatus('round_ended');
-      setRoundSummary(data.summary);
-      setSecondsRemaining(0);
-    });
-
-    // timer:extended
-    newSocket.on('timer:extended', (data: { newSecondsLeft: number }) => {
-      setSecondsRemaining(data.newSecondsLeft);
-    });
-
-    // game:status
-    newSocket.on('game:status', (data: { status: GameStatus; currentRound?: number; currentPrompt?: Prompt }) => {
-      setGameStatus(data.status);
-      if (data.currentRound !== undefined) setCurrentRound(data.currentRound);
-      if (data.currentPrompt !== undefined) setCurrentPrompt(data.currentPrompt);
-    });
-
-    // assignment:received
-    newSocket.on('assignment:received', (data: AssignmentReceivedData) => {
+    const receiveBid = (bid: Bid) => {
+      const current = stateRef.current;
+      if (bid.promptId !== current.currentPrompt?.id || bid.round !== current.currentRound) return;
+      eventVersion.current++;
+      const next = { ...current, bids: [...current.bids.filter((b) => b.teamId !== bid.teamId), bid]
+        .sort((a, b) => a.bidMinutes - b.bidMinutes) };
+      stateRef.current = next;
+      setState(next);
+    };
+    connection.on('bid:new', receiveBid);
+    connection.on('bid:updated', receiveBid);
+    connection.on('prompt:results', (data: { winners: WinnerResult[] }) => setLastWinners(data.winners));
+    connection.on('round:ended', (data: { summary: RoundEndedSummary }) => setRoundSummary(data.summary));
+    connection.on('assignment:received', (data: AssignmentReceivedData) => {
+      privateEventVersion.current++;
       setMyAssignment(data);
     });
-
-    // score:received
-    newSocket.on('score:received', (data: Score) => {
+    connection.on('score:received', (data: Score) => {
+      privateEventVersion.current++;
       setMyScore(data);
     });
-
-    setSocket(newSocket);
-
+    connection.on('game:refresh', () => { void refreshState(); });
+    connection.on('game:reset', () => {
+      privateEventVersion.current++;
+      setMyAssignment(null);
+      setMyScore(null);
+      void refreshState();
+    });
+    const pingInterval = setInterval(ping, 30000);
     return () => {
-      newSocket.disconnect();
+      alive = false;
+      eventVersion.current++;
+      privateEventVersion.current++;
+      requestVersion.current++;
+      clearInterval(pingInterval);
+      connection.removeAllListeners();
+      connection.disconnect();
+      socketRef.current = null;
+      setIsConnected(false);
     };
-  }, [token, refreshState]);
+  }, [token, refreshState, applyState]);
 
-  // Client bid actions (tries socket first, falls back to REST api)
-  const placeBid = useCallback(
-    async (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
-      if (socket && isConnected) {
-        return new Promise((resolve) => {
-          socket.emit('bid:place', { bidMinutes }, async (res: { success: boolean; error?: { message: string }; message?: string }) => {
-            if (res && res.success === false) {
-              resolve({ success: false, message: res.error?.message || res.message });
-            } else {
-              resolve({ success: true });
+  useEffect(() => {
+    void refreshState();
+    const poll = setInterval(refreshState, isConnected ? 15000 : 2500);
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshState(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
+  }, [isConnected, refreshState]);
+
+  const placeBid = useCallback(async (bidMinutes: number): Promise<ActionResult> => {
+    const current = stateRef.current;
+    if (current.status === 'paused') return { success: false, message: 'Bidding is currently paused' };
+    if (current.status !== 'bidding' || !current.currentPrompt || countdown.current.remainingMs() <= 0)
+      return { success: false, message: 'Bidding is closed for this prompt' };
+    const input = { bidMinutes, promptId: current.currentPrompt.id, round: current.currentRound, timerId: current.timerId };
+    const connection = socketRef.current;
+    if (connection?.connected) {
+      return new Promise((resolve) => {
+        connection.timeout(8000).emit('bid:place', input,
+          (error: Error | null, result?: ActionResult & { error?: { message?: string } }) => {
+            if (error || !result) {
+              void refreshState();
+              resolve({ success: false, message: 'Bid confirmation was interrupted. Check your current bid before trying again.' });
+              return;
             }
+            resolve({ success: result.success, message: result.error?.message || result.message });
           });
-        });
-      }
-      try {
-        await api.placeBid(bidMinutes);
-        return { success: true };
-      } catch (err: unknown) {
-        return { success: false, message: err instanceof Error ? err.message : 'Failed to place bid' };
-      }
-    },
-    [socket, isConnected]
-  );
-
-  const updateBid = useCallback(
-    async (bidMinutes: number): Promise<{ success: boolean; message?: string }> => {
-      return placeBid(bidMinutes);
-    },
-    [placeBid]
-  );
-
-  // Admin Socket actions with acks
-  const adminStartRound = useCallback(
-    (roundNumber?: number): Promise<{ success: boolean; message?: string }> => {
-      return new Promise((resolve) => {
-        if (!socket) return resolve({ success: false, message: 'Socket disconnected' });
-        socket.emit('admin:start-round', { roundNumber }, (res: { success: boolean; message?: string }) => {
-          resolve(res || { success: true });
-        });
       });
-    },
-    [socket]
-  );
+    }
+    try {
+      const result = await api.placeBid(bidMinutes, input);
+      await refreshState();
+      return result;
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Failed to place bid' };
+    }
+  }, [refreshState]);
 
-  const adminPause = useCallback((): Promise<{ success: boolean }> => {
-    return new Promise((resolve) => {
-      if (!socket) return resolve({ success: false });
-      socket.emit('admin:pause', {}, (res: { success: boolean }) => resolve(res || { success: true }));
-    });
-  }, [socket]);
+  // Send each command once. HTTP mutations publish the same socket snapshots to
+  // every viewer; no optimistic state changes or duplicate mutation fallback.
+  const adminAction = useCallback(async (action: () => Promise<ActionResult>): Promise<ActionResult> => {
+    if (adminPending.current) return { success: false, message: 'An admin action is already in progress' };
+    adminPending.current = true;
+    try {
+      const result = await action();
+      await refreshState();
+      return result;
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Admin action failed' };
+    } finally { adminPending.current = false; }
+  }, [refreshState]);
 
-  const adminResume = useCallback((): Promise<{ success: boolean }> => {
-    return new Promise((resolve) => {
-      if (!socket) return resolve({ success: false });
-      socket.emit('admin:resume', {}, (res: { success: boolean }) => resolve(res || { success: true }));
-    });
-  }, [socket]);
-
-  const adminExtend = useCallback(
-    (extraSeconds: number): Promise<{ success: boolean }> => {
-      return new Promise((resolve) => {
-        if (!socket) return resolve({ success: false });
-        socket.emit('admin:extend', { extraSeconds }, (res: { success: boolean }) =>
-          resolve(res || { success: true })
-        );
-      });
-    },
-    [socket]
-  );
-
-  const adminNextPrompt = useCallback((): Promise<{ success: boolean }> => {
-    return new Promise((resolve) => {
-      if (!socket) return resolve({ success: false });
-      socket.emit('admin:next-prompt', {}, (res: { success: boolean }) =>
-        resolve(res || { success: true })
-      );
-    });
-  }, [socket]);
-
-  const adminEndRound = useCallback((): Promise<{ success: boolean }> => {
-    return new Promise((resolve) => {
-      if (!socket) return resolve({ success: false });
-      socket.emit('admin:end-round', {}, (res: { success: boolean }) =>
-        resolve(res || { success: true })
-      );
-    });
-  }, [socket]);
-
-  const value = {
-    socket,
-    isConnected,
-    gameStatus,
-    currentRound,
-    currentPrompt,
-    secondsRemaining,
-    bids,
-    lastWinners,
-    myAssignment,
-    myScore,
-    roundSummary,
-    refreshState,
-    placeBid,
-    updateBid,
-    adminStartRound,
-    adminPause,
-    adminResume,
-    adminExtend,
-    adminNextPrompt,
-    adminEndRound
+  return {
+    socket, isConnected, gameStatus: state.status, currentRound: state.currentRound,
+    currentPrompt: state.currentPrompt, bids: state.bids, secondsRemaining,
+    endsAt: state.endsAt ?? null, startTime: state.startTime ?? null, durationSeconds: state.durationSeconds,
+    isPaused: state.status === 'paused', isExpired: secondsRemaining <= 0,
+    biddingConfig: state.config, availableSlots: state.availableSlots, isTimerSynced,
+    rounds: state.rounds, totalRounds: state.totalRounds, hasNextRound: state.hasNextRound, nextRoundNumber: state.nextRoundNumber,
+    lastWinners, myAssignment, myScore, roundSummary, refreshState, placeBid, updateBid: placeBid,
+    adminStartRound: (round?: number) => adminAction(() => api.startRound(round)),
+    adminPause: () => adminAction(() => api.pauseRound(stateRef.current.timerId)),
+    adminResume: () => adminAction(() => api.resumeRound(stateRef.current.timerId)),
+    adminExtend: (extra: number) => adminAction(() => api.extendRound(extra, stateRef.current.timerId)),
+    adminNextPrompt: () => adminAction(() => api.nextPrompt(stateRef.current.timerId)),
+    adminEndRound: () => adminAction(() => api.endRound(stateRef.current.timerId))
   };
+}
 
+const SocketContext = createContext<ReturnType<typeof useBiddingState> | undefined>(undefined);
+export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const value = useBiddingState();
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 };
-
 export const useSocket = () => {
   const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error('useSocket must be used within a SocketProvider');
-  }
+  if (!context) throw new Error('useSocket must be used within a SocketProvider');
   return context;
 };

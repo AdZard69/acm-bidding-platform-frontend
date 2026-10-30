@@ -9,15 +9,18 @@ import {
   WinnerResult,
   RoundEndedSummary,
   Bid,
-  Assignment
+  Assignment,
+  ClockStatusResponse,
+  ClockSyncResponse,
+  CurrentBiddingStateResponse
 } from '../types';
 
 const DEFAULT_API_BASE =
-  typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
+  typeof window !== 'undefined' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
     ? 'https://acm-bidding-platform-backend.onrender.com/api'
     : 'http://localhost:5000/api';
 
-const API_BASE = import.meta.env.VITE_API_URL || DEFAULT_API_BASE;
+export const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API_BASE).replace(/\/$/, '');
 
 class ApiClient {
   private token: string | null = null;
@@ -64,6 +67,8 @@ class ApiClient {
 
     const response = await fetch(url, {
       ...options,
+      cache: 'no-store',
+      signal: options.signal || AbortSignal.timeout(15000),
       headers
     });
 
@@ -172,6 +177,10 @@ class ApiClient {
 
   // --- Admin: Teams ---
 
+  async listBids(round?: number): Promise<{ success: boolean; bids: Bid[] }> {
+    return this.request(round === undefined ? '/admin/bids' : `/admin/bids?round=${round}`);
+  }
+
   async listTeams(): Promise<{ success: boolean; teams: Team[] }> {
     return this.request('/admin/teams');
   }
@@ -254,7 +263,7 @@ class ApiClient {
     });
   }
 
-  async pauseRound(): Promise<{
+  async pauseRound(timerId?: string | null): Promise<{
     success: boolean;
     message: string;
     round: number;
@@ -262,11 +271,12 @@ class ApiClient {
     status: string;
   }> {
     return this.request('/admin/round/pause', {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ timerId })
     });
   }
 
-  async resumeRound(): Promise<{
+  async resumeRound(timerId?: string | null): Promise<{
     success: boolean;
     message: string;
     round: number;
@@ -274,11 +284,12 @@ class ApiClient {
     status: string;
   }> {
     return this.request('/admin/round/resume', {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ timerId })
     });
   }
 
-  async extendRound(extraSeconds: number): Promise<{
+  async extendRound(extraSeconds: number, timerId?: string | null): Promise<{
     success: boolean;
     message: string;
     extraSeconds: number;
@@ -286,11 +297,11 @@ class ApiClient {
   }> {
     return this.request('/admin/round/extend', {
       method: 'POST',
-      body: JSON.stringify({ extraSeconds })
+      body: JSON.stringify({ extraSeconds, timerId })
     });
   }
 
-  async nextPrompt(): Promise<{
+  async nextPrompt(timerId?: string | null): Promise<{
     success: boolean;
     message: string;
     round: number;
@@ -302,11 +313,12 @@ class ApiClient {
     summary?: RoundEndedSummary;
   }> {
     return this.request('/admin/round/next-prompt', {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ timerId })
     });
   }
 
-  async endRound(): Promise<{
+  async endRound(timerId?: string | null): Promise<{
     success: boolean;
     message: string;
     round: number;
@@ -315,7 +327,8 @@ class ApiClient {
     summary: RoundEndedSummary;
   }> {
     return this.request('/admin/round/end', {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({ timerId })
     });
   }
 
@@ -357,23 +370,26 @@ class ApiClient {
     });
   }
 
-  // --- Team Bidding Routes ---
+  // --- Server Clock API ---
 
-  async getCurrentBiddingState(): Promise<{
-    success: boolean;
-    status: string;
-    currentRound: number;
-    currentPrompt: Prompt | null;
-    secondsRemaining: number;
-    bids: Bid[];
-  }> {
-    return this.request('/bid/current');
+  async getClock(): Promise<ClockStatusResponse> {
+    return this.request<ClockStatusResponse>('/clock');
   }
 
-  async placeBid(bidMinutes: number): Promise<{ success: boolean; message: string; bid: Bid }> {
+  async syncClock(clientTime: number = Date.now()): Promise<ClockSyncResponse> {
+    return this.request<ClockSyncResponse>(`/clock/sync?t0=${clientTime}`);
+  }
+
+  // --- Team Bidding Routes ---
+
+  async getCurrentBiddingState(): Promise<CurrentBiddingStateResponse> {
+    return this.request<CurrentBiddingStateResponse>('/bid/current');
+  }
+
+  async placeBid(bidMinutes: number, context: { promptId?: number; round?: number; timerId?: string | null } = {}): Promise<{ success: boolean; message: string; bid: Bid }> {
     return this.request('/bid/place', {
       method: 'POST',
-      body: JSON.stringify({ bidMinutes })
+      body: JSON.stringify({ bidMinutes, ...context })
     });
   }
 
@@ -388,7 +404,7 @@ class ApiClient {
     return this.request('/bid/my-bids');
   }
 
-  async getMyAssignment(): Promise<{ success: boolean; assignment: Assignment | null }> {
+  async getMyAssignment(): Promise<{ success: boolean; assignment: Assignment | null; score: Score | null }> {
     return this.request('/bid/assignment');
   }
 

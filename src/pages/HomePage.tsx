@@ -12,18 +12,21 @@ import {
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
+import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
 
 export const HomePage: React.FC = () => {
-  const { isConnected, gameStatus, currentRound, secondsRemaining, currentPrompt, refreshState } = useSocket();
+  const {
+    isConnected,
+    gameStatus,
+    currentRound,
+    secondsRemaining,
+    isPaused,
+    isExpired,
+    currentPrompt,
+    refreshState
+  } = useSocket();
   const { isAuthenticated, user } = useAuth();
 
-  React.useEffect(() => {
-    refreshState();
-    if (!isConnected) {
-      const timer = setInterval(refreshState, 3000);
-      return () => clearInterval(timer);
-    }
-  }, [isConnected, refreshState]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-12 space-y-10">
@@ -63,14 +66,22 @@ export const HomePage: React.FC = () => {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-6 text-[#A8A29E]">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-[#A8A29E]">
+          <BiddingTimerBadge compact />
+
           <div>
             <span className="text-[#7A756D] mr-1.5">ROUND:</span>
             <strong className="text-[#F4F0EA]">{currentRound > 0 ? `R${currentRound}` : '—'}</strong>
           </div>
           <div>
             <span className="text-[#7A756D] mr-1.5">TIMER:</span>
-            <strong className="text-[#D4AF37]">{secondsRemaining}s</strong>
+            {isPaused ? (
+              <strong className="text-amber-400">{secondsRemaining}s (P)</strong>
+            ) : gameStatus === 'bidding' && secondsRemaining <= 0 ? (
+              <strong className="text-rose-400">0s (Expired)</strong>
+            ) : (
+              <strong className="text-[#D4AF37]">{secondsRemaining}s</strong>
+            )}
           </div>
           <div>
             <span className="text-[#7A756D] mr-1.5">PROMPT:</span>

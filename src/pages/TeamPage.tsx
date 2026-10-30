@@ -1,26 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users,
-  Clock,
-  Zap,
-  TrendingDown,
   AlertCircle,
   CheckCircle2,
   Award
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
 import { api } from '../api/client';
-import { calculateMultiplier, calculateBoostPercentage, calculateFinalScore } from '../utils/multiplier';
-import { Assignment, Bid } from '../types';
+import { Bid } from '../types';
 
 export const TeamPage: React.FC = () => {
   const { user } = useAuth();
   const {
     gameStatus,
     currentRound,
+    hasNextRound,
     currentPrompt,
     secondsRemaining,
+    isPaused,
+    isExpired,
+    biddingConfig,
     bids,
     placeBid,
     updateBid,
@@ -34,45 +35,41 @@ export const TeamPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // REST-backed state
-  const [persistedAssignment, setPersistedAssignment] = useState<Assignment | null>(null);
   const [myBidsHistory, setMyBidsHistory] = useState<Bid[]>([]);
 
   // Fetch team's assignment and previous bids on mount
   useEffect(() => {
     const fetchTeamData = async () => {
       try {
-        const [assignRes, bidsRes] = await Promise.allSettled([
-          api.getMyAssignment(),
-          api.getMyBids()
-        ]);
-        if (assignRes.status === 'fulfilled' && assignRes.value.success) {
-          setPersistedAssignment(assignRes.value.assignment);
-        }
-        if (bidsRes.status === 'fulfilled' && bidsRes.value.success) {
-          setMyBidsHistory(bidsRes.value.bids);
-        }
+        const bidsRes = await api.getMyBids();
+        if (bidsRes.success) setMyBidsHistory(bidsRes.bids);
       } catch {
         // Fallback
       }
     };
     fetchTeamData();
-  }, []);
+  }, [gameStatus, currentRound, user?.teamId]);
 
-  // Use socket assignment or persisted assignment
-  const activeAssignment = socketAssignment || persistedAssignment;
+  const activeAssignment = socketAssignment;
 
   const assignmentTitle =
     activeAssignment && 'title' in activeAssignment
       ? activeAssignment.title
-      : (activeAssignment as Assignment | null)?.prompt?.title || 'Problem Statement';
+      : 'Problem Statement';
 
   const assignmentDescription =
     activeAssignment && 'description' in activeAssignment
       ? activeAssignment.description
-      : (activeAssignment as Assignment | null)?.prompt?.description || '';
+      : '';
 
   // Find team's existing bid on the current prompt
   const myCurrentBid = bids.find((b) => b.teamId === user?.teamId);
+
+  useEffect(() => {
+    setBidMinutes((value) => Math.min(biddingConfig.baseTime, Math.max(biddingConfig.minBid, value)));
+  }, [biddingConfig.baseTime, biddingConfig.minBid]);
+
+  useEffect(() => { setErrorMsg(null); setSuccessMsg(null); }, [currentPrompt?.id, currentRound]);
 
   useEffect(() => {
     if (myCurrentBid) {
@@ -85,10 +82,6 @@ export const TeamPage: React.FC = () => {
     (b) => b.teamId !== user?.teamId && b.bidMinutes === bidMinutes
   );
 
-  const multiplier = calculateMultiplier(bidMinutes, currentRound || 1);
-  const boost = calculateBoostPercentage(multiplier);
-  const simulatedScore = calculateFinalScore(80, multiplier);
-
   const handleSubmitBid = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -99,8 +92,18 @@ export const TeamPage: React.FC = () => {
       return;
     }
 
-    if (bidMinutes < 30 || bidMinutes > 120) {
-      setErrorMsg('Bid must be between 30 and 120 minutes.');
+    if (isPaused) {
+      setErrorMsg('Cannot place bid: round is currently paused.');
+      return;
+    }
+
+    if (isExpired || secondsRemaining <= 0) {
+      setErrorMsg('Cannot place bid: bidding time has expired for this prompt.');
+      return;
+    }
+
+    if (bidMinutes < biddingConfig.minBid || bidMinutes > biddingConfig.baseTime) {
+      setErrorMsg(`Bid must be between ${biddingConfig.minBid} and ${biddingConfig.baseTime} minutes.`);
       return;
     }
 
@@ -143,6 +146,9 @@ export const TeamPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Synchronized Bidding Countdown */}
+      <BiddingTimerBadge />
+
       {/* STATE A: TEAM HAS BEEN ASSIGNED A PROMPT */}
       {activeAssignment ? (
         <div className="p-6 rounded-xl bg-surface-100 border border-emerald-500/30 space-y-6 font-mono">
@@ -164,27 +170,11 @@ export const TeamPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3 rounded-lg bg-surface-200 border border-surface-border">
-              <span className="text-slate-400 block">Committed Time</span>
-              <span className="text-lg font-bold text-white mt-0.5 block">
-                {activeAssignment.bidMinutes} mins
-              </span>
-            </div>
-
-            <div className="p-3 rounded-lg bg-surface-200 border border-surface-border">
-              <span className="text-slate-400 block">Multiplier</span>
-              <span className="text-lg font-bold text-brand-cyan mt-0.5 block">
-                {Number(activeAssignment.multiplier).toFixed(3)}x
-              </span>
-            </div>
-
-            <div className="p-3 rounded-lg bg-surface-200 border border-surface-border">
-              <span className="text-slate-400 block">Multiplier Boost</span>
-              <span className="text-lg font-bold text-brand-emerald mt-0.5 block">
-                +{calculateBoostPercentage(Number(activeAssignment.multiplier)).toFixed(1)}%
-              </span>
-            </div>
+          <div className="p-3 rounded-lg bg-surface-200 border border-surface-border text-xs">
+            <span className="text-slate-400 block">Committed Time</span>
+            <span className="text-lg font-bold text-white mt-0.5 block">
+              {activeAssignment.bidMinutes} mins
+            </span>
           </div>
 
           {/* Judge Evaluation Score (if received) */}
@@ -194,17 +184,13 @@ export const TeamPage: React.FC = () => {
                 <Award className="w-4 h-4" />
                 <span>Judge Evaluation Result</span>
               </div>
-              <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <span className="text-slate-400 block">Judge Raw Score</span>
+                  <span className="text-slate-400 block">Judge Score</span>
                   <span className="text-base font-bold text-white">{socketScore.judgeScore} / 100</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block">Multiplier</span>
-                  <span className="text-base font-bold text-brand-cyan">{Number(socketScore.multiplier).toFixed(3)}x</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Final Multiplied Score</span>
+                  <span className="text-slate-400 block">Final Score</span>
                   <span className="text-base font-bold text-emerald-400">{Number(socketScore.finalScore).toFixed(2)}</span>
                 </div>
               </div>
@@ -213,21 +199,30 @@ export const TeamPage: React.FC = () => {
         </div>
       ) : (
         /* STATE B: BIDDING IN PROGRESS */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Active Prompt & Input Form (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-3">
+        <div className="space-y-6">
+          <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-3">
               <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-brand-cyan font-bold">CURRENT PROMPT</span>
-                <span className="text-slate-400">
-                  {secondsRemaining > 0 ? (
-                    <strong className="text-white">{secondsRemaining}s left to bid</strong>
+                <span className="text-brand-cyan font-bold">ROUND {currentRound || '—'} · PROMPT {currentRound || '—'}</span>
+                <div>
+                  {isPaused ? (
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                      PAUSED ({secondsRemaining}s left)
+                    </span>
+                  ) : secondsRemaining > 0 && !isExpired ? (
+                    <span className="px-2 py-0.5 rounded bg-[#D4AF37]/20 text-[#D4AF37] font-bold border border-[#D4AF37]/30">
+                      {secondsRemaining}s left to bid
+                    </span>
                   ) : (
-                    <span>Timer Expired</span>
+                    <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30">
+                      {gameStatus === 'bidding' ? 'Timer Expired' : 'Bidding Closed'}
+                    </span>
                   )}
-                </span>
+                </div>
               </div>
 
+              {gameStatus === 'round_ended' && <p className="text-amber-300 text-xs font-mono">
+                Round {currentRound} is complete. {hasNextRound ? 'Waiting for the admin to open the next prompt.' : 'All prompt rounds are complete.'}
+              </p>}
               {currentPrompt ? (
                 <div className="space-y-2">
                   <h3 className="text-lg font-bold font-mono text-white">
@@ -281,10 +276,7 @@ export const TeamPage: React.FC = () => {
                 <div>
                   <label className="text-slate-400 block mb-2">Preset Minutes:</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {[30, 45, 60, 75, 90, 105, 120].map((mins) => {
-                      const isTaken = bids.some(
-                        (b) => b.teamId !== user?.teamId && b.bidMinutes === mins
-                      );
+                    {[...new Set([biddingConfig.minBid, 45, 60, 75, 90, 105, biddingConfig.baseTime])].filter((value) => value >= biddingConfig.minBid && value <= biddingConfig.baseTime).sort((a, b) => a - b).map((mins) => {
                       const isSelected = bidMinutes === mins;
                       return (
                         <button
@@ -294,8 +286,6 @@ export const TeamPage: React.FC = () => {
                           className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
                             isSelected
                               ? 'bg-[#D4AF37] text-black font-bold border-[#D4AF37]'
-                              : isTaken
-                              ? 'bg-surface-200 text-slate-600 border-surface-border line-through'
                               : 'bg-surface-200 text-slate-300 border-surface-border hover:text-white'
                           }`}
                         >
@@ -314,44 +304,39 @@ export const TeamPage: React.FC = () => {
                   </div>
                   <input
                     type="range"
-                    min={30}
-                    max={120}
+                    min={biddingConfig.minBid}
+                    max={biddingConfig.baseTime}
                     step={1}
                     value={bidMinutes}
                     onChange={(e) => setBidMinutes(Number(e.target.value))}
                     className="w-full accent-[#D4AF37] cursor-pointer"
                   />
                   <div className="flex justify-between text-[10px] text-slate-500">
-                    <span>30m (Max Multiplier)</span>
-                    <span>120m (Base Time)</span>
-                  </div>
-                </div>
-
-                {/* Multiplier Formula preview */}
-                <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-surface-200 border border-surface-border text-center">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block uppercase">Multiplier</span>
-                    <span className="text-sm font-bold text-brand-cyan">{multiplier.toFixed(3)}x</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block uppercase">Boost</span>
-                    <span className="text-sm font-bold text-brand-emerald">+{boost.toFixed(0)}%</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block uppercase">Sim on 80/100</span>
-                    <span className="text-sm font-bold text-slate-200">{simulatedScore.toFixed(1)}</span>
+                    <span>{biddingConfig.minBid}m (Min Time)</span>
+                    <span>{biddingConfig.baseTime}m (Max Time)</span>
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={submitting || !!collision || gameStatus !== 'bidding'}
-                  className="w-full py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-40"
+                  disabled={
+                    submitting ||
+                    !!collision ||
+                    gameStatus !== 'bidding' ||
+                    isPaused ||
+                    isExpired ||
+                    secondsRemaining <= 0
+                  }
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {submitting
                     ? 'Submitting...'
+                    : isPaused
+                    ? `Round Paused (${secondsRemaining}s remaining)`
                     : gameStatus !== 'bidding'
                     ? 'Bidding Closed'
+                    : isExpired || secondsRemaining <= 0
+                    ? 'Timer Expired (Bidding Closed)'
                     : collision
                     ? 'Time Taken'
                     : myCurrentBid
@@ -360,58 +345,6 @@ export const TeamPage: React.FC = () => {
                 </button>
               </form>
             </div>
-          </div>
-
-          {/* Live Placed Bids Column (5 cols) */}
-          <div className="lg:col-span-5 p-5 rounded-xl bg-surface-100 border border-surface-border flex flex-col font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-surface-border pb-3 mb-3">
-              <span className="font-bold text-white uppercase">Auction Board</span>
-              <span className="text-slate-400">Lowest 3 Qualify</span>
-            </div>
-
-            <div className="space-y-2 overflow-y-auto max-h-[440px] pr-1 flex-1">
-              {bids.length === 0 ? (
-                <div className="h-40 flex items-center justify-center text-slate-500">
-                  No bids placed yet
-                </div>
-              ) : (
-                bids.map((b, idx) => {
-                  const isMine = b.teamId === user?.teamId;
-                  const isWinning = idx < 3;
-                  const m = calculateMultiplier(b.bidMinutes, currentRound || 1);
-
-                  return (
-                    <div
-                      key={b.teamId}
-                      className={`p-2.5 rounded-lg border flex items-center justify-between ${
-                        isMine
-                          ? 'bg-surface-50 border-white text-white'
-                          : isWinning
-                          ? 'bg-surface-200 border-emerald-500/40 text-slate-200'
-                          : 'bg-surface-300 border-surface-border text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
-                            isWinning ? 'bg-emerald-500 text-slate-950' : 'bg-surface-100 text-slate-400'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        <span>{b.teamName || `Team #${b.teamId}`} {isMine && '(You)'}</span>
-                      </div>
-
-                      <div className="text-right">
-                        <div>{b.bidMinutes}m</div>
-                        <div className="text-[10px] text-slate-400">{m.toFixed(3)}x</div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
         </div>
       )}
 
@@ -431,9 +364,6 @@ export const TeamPage: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <span className="text-white font-bold">{h.bidMinutes} mins</span>
-                  <span className="text-[10px] text-slate-400 ml-2">
-                    ({calculateMultiplier(h.bidMinutes, h.round).toFixed(3)}x)
-                  </span>
                 </div>
               </div>
             ))}
