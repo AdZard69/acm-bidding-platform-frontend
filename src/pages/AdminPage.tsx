@@ -53,7 +53,8 @@ export const AdminPage: React.FC = () => {
     adminResume,
     adminExtend,
     adminNextPrompt,
-    adminEndRound
+    adminEndRound,
+    adminRerunRound
   } = useSocket();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('controls');
@@ -265,6 +266,42 @@ export const AdminPage: React.FC = () => {
     }
   };
 
+  const handleRerunRound = async (roundNum?: number) => {
+    const r = roundNum !== undefined ? roundNum : (currentRound || targetRound || 1);
+    if (r < 1 || r > totalRounds) {
+      showMsg('error', `Invalid round number: ${r}`);
+      return;
+    }
+
+    const roundDef = roundDefinitions.find((def) => def.roundNumber === r);
+    const prompt = prompts.find((p) => p.id === roundDef?.promptId);
+    const promptLabel = prompt ? ` ("${prompt.title}")` : '';
+
+    const confirmMsg =
+      `RERUN ROUND ${r}${promptLabel}?\n\n` +
+      `⚠️ WARNING: This will:\n` +
+      `• Reset all bids placed for Round ${r}\n` +
+      `• Clear assignments and scores for teams who won in Round ${r}\n` +
+      `• Immediately restart the bidding countdown for Round ${r}\n\n` +
+      `Are you sure you want to proceed?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setLoading(true);
+      const result = await adminRerunRound(r);
+      if (!result.success) throw new Error(result.message || 'Failed to rerun round');
+      showMsg('success', result.message || `Round ${r} rerun started`);
+      setControlsView('controls');
+      setTargetRound(r);
+      await fetchAdminData();
+    } catch (err: unknown) {
+      showMsg('error', err instanceof Error ? err.message : 'Failed to rerun round');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Team CRUD
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -445,7 +482,7 @@ export const AdminPage: React.FC = () => {
   const roundBidsHistory = groupRoundBids(bidHistory, bids, roundDefinitions);
   const isPromptRunning = gameStatus === 'bidding' && !isExpired;
   const isRoundOpen = gameStatus === 'bidding' || gameStatus === 'paused';
-  const canStartRound = totalRounds > 0 && (gameStatus === 'waiting' || (gameStatus === 'round_ended' && hasNextRound));
+  const canStartRound = totalRounds > 0 && !isRoundOpen;
   const canAdvance = currentRound > 0 && (isRoundOpen || (gameStatus === 'round_ended' && hasNextRound));
 
   // Computed placed bids for selected round view
@@ -687,16 +724,35 @@ export const AdminPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2 flex items-center gap-2">
-                    <div className={`flex items-center gap-2 bg-surface-200 border border-surface-border rounded-lg px-3 py-2 shrink-0 ${isPromptRunning ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center gap-2 bg-surface-200 border border-surface-border rounded-lg px-3 py-2 shrink-0">
                       <span className="text-slate-400 font-bold uppercase text-[11px]">Round:</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={Math.max(1, totalRounds)}
+                        step={1}
+                        value={targetRound}
+                        disabled={loading}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setTargetRound(val);
+                        }}
+                        className="w-16 sm:w-24 accent-[#D4AF37] cursor-pointer"
+                        title="Round slider"
+                        aria-label="Round to control"
+                      />
                       <input
                         type="number"
                         min={1}
-                        max={totalRounds}
+                        max={Math.max(1, totalRounds)}
                         value={targetRound}
-                        readOnly
-                        disabled
-                        className="w-14 px-2 py-1 bg-surface-100 border border-surface-border rounded text-center text-white font-bold text-xs focus:outline-none focus:border-[#D4AF37] disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Round number to control"
+                        disabled={loading}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(totalRounds, Number(e.target.value) || 1));
+                          setTargetRound(val);
+                        }}
+                        className="w-12 px-2 py-1 bg-surface-100 border border-surface-border rounded text-center text-white font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
                       />
                       <span className="text-[10px] text-slate-500">/ {totalRounds}</span>
                     </div>
@@ -710,7 +766,7 @@ export const AdminPage: React.FC = () => {
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>
                         {isRoundOpen ? `Round ${currentRound} · Prompt ${currentRound}`
-                          : !hasNextRound && currentRound > 0 ? 'All rounds complete' : `Start Round ${targetRound} · Prompt ${targetRound}`}
+                          : `Start Round ${targetRound} · Prompt ${targetRound}`}
                       </span>
                     </button>
                   </div>
@@ -736,15 +792,16 @@ export const AdminPage: React.FC = () => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-surface-border">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-surface-border">
                   {/* Extend time */}
                   <div className="flex gap-1.5">
                     {[15, 30, 60].map((s) => (
                       <button
                         key={s}
                         onClick={() => handleExtend(s)}
-                        disabled={loading || !isRoundOpen || isExpired}
+                        disabled={loading || currentRound === 0}
                         className="flex-1 py-2 bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border rounded-lg disabled:opacity-40 transition-colors"
+                        title={`Add ${s}s to countdown`}
                       >
                         +{s}s
                       </button>
@@ -766,6 +823,130 @@ export const AdminPage: React.FC = () => {
                   >
                     End Current Round
                   </button>
+
+                  <button
+                    onClick={() => handleRerunRound(targetRound)}
+                    disabled={loading || totalRounds === 0}
+                    className="py-2 px-4 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    title={`Reset bids and winners, then restart Round ${targetRound}`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Rerun Round {targetRound}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Round Management & Controls for Each Round */}
+              <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4 font-mono text-xs">
+                <div className="flex items-center justify-between border-b border-surface-border pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-[#D4AF37]" />
+                    <span className="font-bold text-white uppercase text-sm">
+                      Round Controls
+                    </span>
+                  </div>
+                  <span className="text-slate-400 text-[11px]">
+                    Total Rounds: <strong className="text-white">{totalRounds}</strong>
+                  </span>
+                </div>
+
+                <div className="divide-y divide-surface-border rounded-lg border border-surface-border overflow-hidden bg-surface-200/40">
+                  {roundDefinitions.length === 0 ? (
+                    <div className="py-6 text-center text-slate-500">
+                      No prompts configured. Add prompts to generate rounds.
+                    </div>
+                  ) : (
+                    roundDefinitions.map((rd) => {
+                      const r = rd.roundNumber;
+                      const prompt = prompts.find((p) => p.id === rd.promptId);
+                      const isCurrent = currentRound === r;
+                      const isCompleted = currentRound > r || (currentRound === r && gameStatus === 'round_ended');
+                      const isRunning = currentRound === r && isPromptRunning;
+                      const isUpcoming = currentRound === 0 || r > currentRound;
+                      const bidsForThisRound = roundBidsHistory[r] || [];
+                      const winnersForRound = teams.filter((t) => t.assignment?.promptId === rd.promptId);
+                      const canRerun = currentRound > 0 && r <= currentRound;
+
+                      return (
+                        <div
+                          key={r}
+                          className={`p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors ${
+                            isCurrent ? 'bg-surface-50/80' : 'hover:bg-surface-50/40'
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white text-sm">
+                                Round {r}
+                              </span>
+                              {isRunning && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  LIVE
+                                </span>
+                              )}
+                              {isCurrent && isPaused && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+                                  PAUSED
+                                </span>
+                              )}
+                              {isCurrent && gameStatus === 'round_ended' && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-sky-500/15 text-sky-300 border border-sky-500/30 font-bold">
+                                  ROUND COMPLETE
+                                </span>
+                              )}
+                              {isCompleted && !isCurrent && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-500/15 text-slate-300 border border-surface-border font-bold">
+                                  COMPLETED
+                                </span>
+                              )}
+                              {isUpcoming && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-surface-100 text-slate-500 border border-surface-border font-bold">
+                                  UPCOMING
+                                </span>
+                              )}
+                              {winnersForRound.length > 0 && (
+                                <span className="text-emerald-400 text-[11px] font-bold">
+                                  {winnersForRound.length} {winnersForRound.length === 1 ? 'Winner' : 'Winners'} Assigned
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-slate-400 text-[11px] truncate max-w-md">
+                              {prompt?.title || `Prompt #${rd.promptId}`}
+                              {prompt?.description ? ` — ${prompt.description}` : ''}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => setControlsView(r)}
+                              className="py-1.5 px-3 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 hover:text-white border border-surface-border font-bold uppercase transition-colors flex items-center gap-1.5"
+                              title={`View bids for Round ${r}`}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View Bids ({bidsForThisRound.length})</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleRerunRound(r)}
+                              disabled={loading || !canRerun}
+                              className="py-1.5 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                              title={
+                                currentRound === 0
+                                  ? 'No round has been started yet'
+                                  : r > currentRound
+                                  ? `Round ${r} has not been started yet`
+                                  : `Rerun Round ${r} (resets bids and assignments for this round)`
+                              }
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Rerun Round {r}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -963,9 +1144,27 @@ export const AdminPage: React.FC = () => {
                   </p>
                 </div>
 
-                <span className="px-2.5 py-1 rounded bg-surface-200 text-slate-300 border border-surface-border font-bold">
-                  {selectedRoundBids.length} {selectedRoundBids.length === 1 ? 'Bid' : 'Bids'} Placed
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-1 rounded bg-surface-200 text-slate-300 border border-surface-border font-bold">
+                    {selectedRoundBids.length} {selectedRoundBids.length === 1 ? 'Bid' : 'Bids'} Placed
+                  </span>
+
+                  <button
+                    onClick={() => handleRerunRound(controlsView)}
+                    disabled={loading || currentRound === 0 || controlsView > currentRound}
+                    className="py-1.5 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    title={
+                      currentRound === 0
+                        ? 'No round has been started yet'
+                        : controlsView > currentRound
+                        ? `Round ${controlsView} has not been started yet`
+                        : `Rerun Round ${controlsView} (resets bids and assignments for this round)`
+                    }
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Rerun Round {controlsView}</span>
+                  </button>
+                </div>
               </div>
 
               {selectedRoundBids.length === 0 ? (

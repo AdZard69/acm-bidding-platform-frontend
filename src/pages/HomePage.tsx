@@ -161,7 +161,7 @@ export const HomePage: React.FC = () => {
             <div>
               <h3 className="font-sans font-bold text-lg text-[#F4F0EA]">Leaderboard</h3>
               <p className="text-xs text-[#A8A29E] font-sans mt-1">
-                Live rankings showing bids, calculated multipliers, judge scores, and final totals.
+                Live rankings showing bids, judge scores, and final totals.
               </p>
             </div>
           </div>

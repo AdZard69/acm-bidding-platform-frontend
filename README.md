@@ -95,6 +95,11 @@ Admin mutations are sent once; HTTP mutations publish real-time socket updates.
 Team bids include the viewed prompt, round and timer session. Public viewers use
 spectator sockets. Disconnected views poll until their connection returns.
 
+The live connection starts over HTTP polling and upgrades to WebSocket in the
+background. A stalled WebSocket handshake cannot delay the initial countdown.
+If a view misses the full start/rerun event, its first timer tick displays the
+server's remaining time immediately while prompt details refresh separately.
+
 `VITE_API_URL` includes `/api`. `VITE_SOCKET_URL` is optional when HTTP and sockets
 share a host; otherwise set both to the intended backend. Deploy together with
 the backend's persisted-timer migration and run one backend instance.

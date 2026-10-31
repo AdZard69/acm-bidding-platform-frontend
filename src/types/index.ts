@@ -37,6 +37,7 @@ export interface Prompt {
 }
 
 export interface Bid {
+  timerId?: string | null;
   id?: number;
   teamId: number;
   teamName?: string;
@@ -172,6 +173,9 @@ export interface ClockSyncResponse {
 }
 
 export interface CurrentBiddingStateResponse {
+  timerStreamId?: string;
+  timerSequence?: number;
+  serverMonotonicTime?: number;
   success: boolean;
   status: GameStatus;
   currentRound: number;
@@ -194,4 +198,15 @@ export interface CurrentBiddingStateResponse {
   isPaused?: boolean;
   hasExpired?: boolean;
   bids: Bid[];
+}
+
+export interface RerunRoundResponse {
+  success: boolean;
+  message: string;
+  round: number;
+  prompt?: Prompt;
+  promptIndex?: number;
+  totalPrompts?: number;
+  resetWinners?: number[];
+  status?: GameStatus;
 }

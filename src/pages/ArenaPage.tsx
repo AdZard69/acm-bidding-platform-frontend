@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
 import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
-import { calculateMultiplier, calculateBoostPercentage } from '../utils/multiplier';
 
 export const ArenaPage: React.FC = () => {
   const {
@@ -170,7 +169,7 @@ export const ArenaPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-brand-emerald" />
               <h3 className="font-mono font-bold text-white text-sm">
-                Placed Bids (Lowest 3 Qualify)
+                Placed Bids (Lowest {biddingConfig.slotsPerPrompt} Qualify)
               </h3>
             </div>
             <span className="text-xs font-mono text-slate-400">
@@ -187,9 +186,6 @@ export const ArenaPage: React.FC = () => {
               bids.map((b, idx) => {
                 const isWinning = gameStatus === 'round_ended'
                   ? Boolean(lastWinners?.some((winner) => winner.teamId === b.teamId)) : idx < availableSlots;
-                const multiplier = (gameStatus === 'round_ended' ? lastWinners?.find((winner) => winner.teamId === b.teamId)?.multiplier : undefined)
-                  ?? calculateMultiplier(b.bidMinutes, currentRound || 1, biddingConfig.baseTime, biddingConfig.minBid);
-                const boost = calculateBoostPercentage(multiplier);
 
                 return (
                   <div
@@ -217,9 +213,6 @@ export const ArenaPage: React.FC = () => {
                       <div className="text-white font-semibold">
                         {b.bidMinutes} mins
                       </div>
-                      <div className="text-[10px] text-brand-cyan">
-                        {multiplier.toFixed(3)}x (+{boost.toFixed(0)}%)
-                      </div>
                     </div>
                   </div>
                 );
@@ -236,7 +229,7 @@ export const ArenaPage: React.FC = () => {
                 {lastWinners.map((w, i) => (
                   <div key={w.teamId} className="flex justify-between text-slate-300">
                     <span>#{i + 1} {w.teamName}</span>
-                    <span>{w.bidMinutes}m ({Number(w.multiplier).toFixed(3)}x)</span>
+                    <span>{w.bidMinutes}m</span>
                   </div>
                 ))}
               </div>
