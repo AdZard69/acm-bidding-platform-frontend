@@ -16,6 +16,8 @@ export const TeamPage: React.FC = () => {
   const {
     gameStatus,
     currentRound,
+    timerId,
+    isTimerSynced,
     hasNextRound,
     currentPrompt,
     secondsRemaining,
@@ -39,16 +41,18 @@ export const TeamPage: React.FC = () => {
 
   // Fetch team's assignment and previous bids on mount
   useEffect(() => {
+    let active = true;
     const fetchTeamData = async () => {
       try {
         const bidsRes = await api.getMyBids();
-        if (bidsRes.success) setMyBidsHistory(bidsRes.bids);
+        if (active && bidsRes.success) setMyBidsHistory(bidsRes.bids);
       } catch {
         // Fallback
       }
     };
     fetchTeamData();
-  }, [gameStatus, currentRound, user?.teamId]);
+    return () => { active = false; };
+  }, [gameStatus, currentRound, timerId, user?.teamId]);
 
   const activeAssignment = socketAssignment;
 
@@ -69,7 +73,7 @@ export const TeamPage: React.FC = () => {
     setBidMinutes((value) => Math.min(biddingConfig.baseTime, Math.max(biddingConfig.minBid, value)));
   }, [biddingConfig.baseTime, biddingConfig.minBid]);
 
-  useEffect(() => { setErrorMsg(null); setSuccessMsg(null); }, [currentPrompt?.id, currentRound]);
+  useEffect(() => { setErrorMsg(null); setSuccessMsg(null); }, [currentPrompt?.id, currentRound, timerId]);
 
   useEffect(() => {
     if (myCurrentBid) {
@@ -204,7 +208,9 @@ export const TeamPage: React.FC = () => {
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="text-brand-cyan font-bold">ROUND {currentRound || '—'} · PROMPT {currentRound || '—'}</span>
                 <div>
-                  {isPaused ? (
+                  {!isTimerSynced ? (
+                    <span className="text-slate-400">Syncing bidding state…</span>
+                  ) : isPaused ? (
                     <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
                       PAUSED ({secondsRemaining}s left)
                     </span>

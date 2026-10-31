@@ -12,7 +12,8 @@ import {
   Assignment,
   ClockStatusResponse,
   ClockSyncResponse,
-  CurrentBiddingStateResponse
+  CurrentBiddingStateResponse,
+  RerunRoundResponse
 } from '../types';
 
 const DEFAULT_API_BASE =
@@ -329,6 +330,13 @@ class ApiClient {
     return this.request('/admin/round/end', {
       method: 'POST',
       body: JSON.stringify({ timerId })
+    });
+  }
+
+  async rerunRound(roundNumber?: number): Promise<RerunRoundResponse> {
+    return this.request('/admin/round/rerun', {
+      method: 'POST',
+      body: JSON.stringify(roundNumber !== undefined ? { round: roundNumber } : {})
     });
   }
 

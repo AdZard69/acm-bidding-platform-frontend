@@ -11,8 +11,8 @@ import { LeaderboardEntry } from '../types';
 import { calculateBoostPercentage } from '../utils/multiplier';
 
 export const LeaderboardPage: React.FC = () => {
-  const { isTeam, isAdmin } = useAuth();
-  const showMultiplier = !isTeam;
+  const { isAdmin } = useAuth();
+  const showMultiplier = isAdmin;
   const { socket } = useSocket();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);

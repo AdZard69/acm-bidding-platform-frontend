@@ -2,11 +2,12 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { io, Socket } from 'socket.io-client';
 import {
   Bid, WinnerResult, RoundEndedSummary, AssignmentReceivedData,
-  Score, CurrentBiddingStateResponse
+  Score, CurrentBiddingStateResponse, GameStatus
 } from '../types';
 import { useAuth } from './AuthContext';
 import { api, API_BASE } from '../api/client';
-import { BiddingTimer } from '../utils/biddingTimer';
+import { BiddingTimer, isOlderTimerSnapshot } from '../utils/biddingTimer';
+import { biddingSocketOptions } from '../utils/socketOptions';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || new URL(API_BASE, window.location.origin).origin;
 type ActionResult = { success: boolean; message?: string };
@@ -37,18 +38,31 @@ function useBiddingState() {
   const requestVersion = useRef(0);
   const socketRef = useRef<Socket | null>(null);
   const latencyMs = useRef(0);
+  const clockAnchor = useRef<{ streamId: string; serverTime: number; receivedAt: number } | null>(null);
+  const pingSamples = useRef<number[]>([]);
   const adminPending = useRef(false);
+  const recoveringTimerId = useRef<string | null>(null);
 
   const applyState = useCallback((next: CurrentBiddingStateResponse) => {
     const previous = stateRef.current;
+    if (isOlderTimerSnapshot(next, previous)) return;
     stateRef.current = next;
-    countdown.current.apply(next, latencyMs.current);
+    const anchor = clockAnchor.current;
+    const age = anchor && anchor.streamId === next.timerStreamId && next.serverMonotonicTime != null
+      ? Math.max(0, anchor.serverTime + performance.now() - anchor.receivedAt - next.serverMonotonicTime)
+      : latencyMs.current;
+    countdown.current.apply(next, age);
     setState(next);
     setSecondsRemaining(countdown.current.secondsRemaining());
     setIsTimerSynced(true);
     if (previous.timerId !== next.timerId && next.status === 'bidding') {
       setLastWinners(null);
       setRoundSummary(null);
+      // A rerun has the same prompt/round but a new bidding session.
+      if (previous.timerId !== null) {
+        privateEventVersion.current++;
+        setMyAssignment((assignment) => assignment?.promptId === next.currentPrompt?.id ? null : assignment);
+      }
     }
     if (next.status === 'round_ended') {
       setLastWinners(next.winners || []);
@@ -69,21 +83,21 @@ function useBiddingState() {
     const request = ++requestVersion.current;
     const version = eventVersion.current;
     const privateVersion = privateEventVersion.current;
-    const [publicResult, privateResult] = await Promise.allSettled([
-      api.getCurrentBiddingState(),
-      user?.role === 'team' ? api.getMyAssignment() : Promise.resolve(null)
+    await Promise.allSettled([
+      api.getCurrentBiddingState().then((result) => {
+        if (request === requestVersion.current && version === eventVersion.current && result.success) applyState(result);
+      }),
+      user?.role === 'team' ? api.getMyAssignment().then((result) => {
+        if (request !== requestVersion.current || privateVersion !== privateEventVersion.current || !result.success) return;
+        const { assignment, score } = result;
+        setMyAssignment(assignment ? {
+          promptId: assignment.promptId, title: assignment.prompt?.title || '',
+          description: assignment.prompt?.description || '', bidMinutes: assignment.bidMinutes,
+          multiplier: Number(assignment.multiplier), codingTimeMinutes: assignment.bidMinutes, round: assignment.round
+        } : null);
+        setMyScore(score || null);
+      }) : Promise.resolve()
     ]);
-    if (request !== requestVersion.current) return;
-    if (version === eventVersion.current && publicResult.status === 'fulfilled' && publicResult.value.success) applyState(publicResult.value);
-    if (privateVersion === privateEventVersion.current && privateResult.status === 'fulfilled' && privateResult.value?.success) {
-      const { assignment, score } = privateResult.value;
-      setMyAssignment(assignment ? {
-        promptId: assignment.promptId, title: assignment.prompt?.title || '',
-        description: assignment.prompt?.description || '', bidMinutes: assignment.bidMinutes,
-        multiplier: Number(assignment.multiplier), codingTimeMinutes: assignment.bidMinutes, round: assignment.round
-      } : null);
-      setMyScore(score || null);
-    }
   }, [applyState, user?.role, user?.teamId, token]);
 
   useEffect(() => {
@@ -97,9 +111,8 @@ function useBiddingState() {
     setIsTimerSynced(false);
     eventVersion.current++;
     const connection = io(SOCKET_URL, {
-      auth: token ? { token } : {},
-      transports: ['websocket', 'polling'],
-      reconnection: true, reconnectionDelay: 1000, reconnectionDelayMax: 5000
+      ...biddingSocketOptions,
+      auth: token ? { token } : {}
     });
     socketRef.current = connection;
     setSocket(connection);
@@ -107,32 +120,132 @@ function useBiddingState() {
 
     const ping = () => {
       const sentAt = performance.now();
-      connection.timeout(5000).emit('time:sync', {}, (error: Error | null) => {
-        if (!error && alive) latencyMs.current = Math.max(0, (performance.now() - sentAt) / 2);
+      connection.timeout(5000).emit('time:sync', {}, (error: Error | null, result?: any) => {
+        if (error || !alive) return;
+        const receivedAt = performance.now();
+        const processingMs = Math.max(0, (result?.serverTransmitTime ?? 0) - (result?.serverReceiveTime ?? 0));
+        const delay = Math.max(0, (receivedAt - sentAt - processingMs) / 2);
+        pingSamples.current = [...pingSamples.current.slice(-4), delay];
+        latencyMs.current = Math.min(...pingSamples.current);
+        const timer = result?.timer;
+        if (timer?.timerStreamId && timer.serverMonotonicTime != null && delay <= latencyMs.current) {
+          clockAnchor.current = { streamId: timer.timerStreamId, serverTime: timer.serverMonotonicTime + delay, receivedAt };
+        }
       });
     };
     connection.on('connect', () => {
       if (!alive) return;
       setIsConnected(true);
+      latencyMs.current = 0;
+      pingSamples.current = [];
+      clockAnchor.current = null;
       ping();
       void refreshState();
     });
     connection.on('disconnect', () => { if (alive) setIsConnected(false); });
     connection.on('connect_error', () => { if (alive) setIsConnected(false); });
 
+    const handleTimerTick = (timer: any) => {
+      if (!timer) return;
+      const current = stateRef.current;
+      if (isOlderTimerSnapshot(timer, current)) return;
+      const newSession = Boolean(timer.timerId && timer.timerId !== current.timerId);
+      if (newSession) eventVersion.current++;
+      const status = (timer.status || (timer.secondsRemaining || timer.secondsLeft ? 'bidding' : current.status)) as GameStatus;
+      const rawMs = timer.remainingMs != null
+        ? timer.remainingMs
+        : timer.secondsRemaining != null
+        ? timer.secondsRemaining * 1000
+        : timer.secondsLeft != null
+        ? timer.secondsLeft * 1000
+        : 0;
+      const timerId = timer.timerId || current.timerId;
+      const round = timer.roundNumber || timer.currentRound || timer.round || current.currentRound;
+      const prompt = timer.currentPrompt || timer.prompt ||
+        (!newSession || current.currentPrompt?.id === timer.promptId ? current.currentPrompt : null);
+
+      const nextState: CurrentBiddingStateResponse = {
+        ...current,
+        ...timer,
+        status,
+        currentRound: round,
+        currentPrompt: prompt,
+        timerId,
+        bids: timer.bids ?? (newSession ? [] : current.bids),
+        winners: newSession ? [] : current.winners,
+        summary: newSession ? null : current.summary,
+        availableSlots: timer.availableSlots ?? (newSession ? current.config.slotsPerPrompt : current.availableSlots),
+        remainingMs: rawMs,
+        secondsRemaining: Math.ceil(rawMs / 1000),
+        isPaused: status === 'paused',
+        hasExpired: rawMs <= 0 && status !== 'paused'
+      };
+
+      applyState(nextState);
+      // The tick already has authoritative remaining time. Render it immediately
+      // while fetching prompt/history details; a slow REST read must not gate it.
+      if ((newSession || !prompt) && !timer.currentPrompt && timerId && recoveringTimerId.current !== timerId) {
+        recoveringTimerId.current = timerId;
+        void refreshState().finally(() => {
+          if (recoveringTimerId.current === timerId) recoveringTimerId.current = null;
+        });
+      }
+    };
+
+    const handleRoundState = (data: any) => {
+      if (!data) return;
+      eventVersion.current++;
+      const current = stateRef.current;
+      const rawMs = data.remainingMs != null
+        ? data.remainingMs
+        : data.secondsRemaining != null
+        ? data.secondsRemaining * 1000
+        : data.secondsLeft != null
+        ? data.secondsLeft * 1000
+        : current.remainingMs;
+      const status = (data.status || 'bidding') as GameStatus;
+      const nextState: CurrentBiddingStateResponse = {
+        ...current,
+        ...data,
+        status,
+        currentRound: data.roundNumber || data.currentRound || data.round || current.currentRound,
+        currentPrompt: data.currentPrompt || data.prompt || current.currentPrompt,
+        remainingMs: rawMs,
+        secondsRemaining: Math.ceil(rawMs / 1000),
+        isPaused: status === 'paused',
+        hasExpired: false
+      };
+      applyState(nextState);
+    };
+
     connection.on('game:status', (next: CurrentBiddingStateResponse) => {
       eventVersion.current++;
       applyState(next);
     });
-    connection.on('timer:tick', (timer: CurrentBiddingStateResponse) => {
+    connection.on('timer:tick', handleTimerTick);
+    connection.on('round:started', handleRoundState);
+    connection.on('round:resumed', handleRoundState);
+    connection.on('prompt:reveal', handleRoundState);
+    connection.on('prompt:next', handleRoundState);
+    connection.on('timer:extended', (data: any) => {
+      eventVersion.current++;
+      handleTimerTick(data);
+    });
+    connection.on('round:paused', (data: any) => {
+      eventVersion.current++;
       const current = stateRef.current;
-      if (timer.timerId !== current.timerId || current.status !== 'bidding') return;
-      countdown.current.apply({ ...current, ...timer }, latencyMs.current);
-      setSecondsRemaining(countdown.current.secondsRemaining());
+      const nextState: CurrentBiddingStateResponse = {
+        ...current,
+        ...data,
+        status: 'paused' as GameStatus,
+        isPaused: true
+      };
+      applyState(nextState);
     });
     const receiveBid = (bid: Bid) => {
       const current = stateRef.current;
       if (bid.promptId !== current.currentPrompt?.id || bid.round !== current.currentRound) return;
+      if (bid.timerId && bid.timerId !== current.timerId) return;
       eventVersion.current++;
       const next = { ...current, bids: [...current.bids.filter((b) => b.teamId !== bid.teamId), bid]
         .sort((a, b) => a.bidMinutes - b.bidMinutes) };
@@ -142,11 +255,36 @@ function useBiddingState() {
     connection.on('bid:new', receiveBid);
     connection.on('bid:updated', receiveBid);
     connection.on('prompt:results', (data: { winners: WinnerResult[] }) => setLastWinners(data.winners));
-    connection.on('round:ended', (data: { summary: RoundEndedSummary }) => setRoundSummary(data.summary));
-    connection.on('assignment:received', (data: AssignmentReceivedData) => {
+    connection.on('round:ended', (data: any) => {
+      eventVersion.current++;
+      const current = stateRef.current;
+      if (data?.timerId && data.timerId !== current.timerId) return;
+      const winners = data?.summary?.winners || data?.winners || current.winners || [];
+      const nextState: CurrentBiddingStateResponse = {
+        ...current,
+        status: 'round_ended' as GameStatus,
+        remainingMs: 0,
+        secondsRemaining: 0,
+        hasExpired: true,
+        winners,
+        summary: data?.summary || current.summary
+      };
+      applyState(nextState);
+      setLastWinners(winners);
+      if (data?.summary) setRoundSummary(data.summary);
+    });
+    const clearAssignment = () => {
+      privateEventVersion.current++;
+      setMyAssignment(null);
+      setMyScore(null);
+    };
+    connection.on('assignment:received', (data: AssignmentReceivedData | null) => {
+      if (!data?.promptId) { clearAssignment(); return; }
       privateEventVersion.current++;
       setMyAssignment(data);
     });
+    connection.on('assignment:cleared', clearAssignment);
+    connection.on('assignment:reset', clearAssignment);
     connection.on('score:received', (data: Score) => {
       privateEventVersion.current++;
       setMyScore(data);
@@ -159,6 +297,7 @@ function useBiddingState() {
       void refreshState();
     });
     const pingInterval = setInterval(ping, 30000);
+    connection.connect();
     return () => {
       alive = false;
       eventVersion.current++;
@@ -216,16 +355,22 @@ function useBiddingState() {
     adminPending.current = true;
     try {
       const result = await action();
-      await refreshState();
+      const next = result as ActionResult & Partial<CurrentBiddingStateResponse>;
+      if (result.success && next.config && next.currentRound != null && Array.isArray(next.bids) && next.remainingMs != null) {
+        eventVersion.current++;
+        applyState(next as CurrentBiddingStateResponse);
+      }
+      void refreshState();
       return result;
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Admin action failed' };
     } finally { adminPending.current = false; }
-  }, [refreshState]);
+  }, [refreshState, applyState]);
 
   return {
     socket, isConnected, gameStatus: state.status, currentRound: state.currentRound,
     currentPrompt: state.currentPrompt, bids: state.bids, secondsRemaining,
+    timerId: state.timerId,
     endsAt: state.endsAt ?? null, startTime: state.startTime ?? null, durationSeconds: state.durationSeconds,
     isPaused: state.status === 'paused', isExpired: secondsRemaining <= 0,
     biddingConfig: state.config, availableSlots: state.availableSlots, isTimerSynced,
@@ -236,7 +381,8 @@ function useBiddingState() {
     adminResume: () => adminAction(() => api.resumeRound(stateRef.current.timerId)),
     adminExtend: (extra: number) => adminAction(() => api.extendRound(extra, stateRef.current.timerId)),
     adminNextPrompt: () => adminAction(() => api.nextPrompt(stateRef.current.timerId)),
-    adminEndRound: () => adminAction(() => api.endRound(stateRef.current.timerId))
+    adminEndRound: () => adminAction(() => api.endRound(stateRef.current.timerId)),
+    adminRerunRound: (round?: number) => adminAction(() => api.rerunRound(round))
   };
 }
 
