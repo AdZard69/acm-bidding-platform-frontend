@@ -308,6 +308,11 @@ function useBiddingState() {
       setMyScore(null);
       void refreshState();
     });
+    connection.on('coding:started', () => { void refreshState(); });
+    connection.on('coding:paused', () => { void refreshState(); });
+    connection.on('coding:resumed', () => { void refreshState(); });
+    connection.on('coding:reset', () => { void refreshState(); });
+    connection.on('submission:updated', () => { void refreshState(); });
     const pingInterval = setInterval(ping, 30000);
     connection.connect();
     return () => {
@@ -392,6 +397,7 @@ function useBiddingState() {
     isPaused: state.status === 'paused', isExpired: secondsRemaining <= 0,
     biddingConfig: state.config, availableSlots: state.availableSlots, isTimerSynced,
     rounds: state.rounds, totalRounds: state.totalRounds, hasNextRound: state.hasNextRound, nextRoundNumber: state.nextRoundNumber,
+    codingState: state.codingState,
     lastWinners, myAssignment, myScore, roundSummary, refreshState, placeBid, updateBid: placeBid,
     adminStartRound: (round?: number) => adminAction(() => api.startRound(round)),
     adminPause: () => adminAction(() => api.pauseRound(stateRef.current.timerId)),

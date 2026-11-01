@@ -26,6 +26,7 @@ export interface Team {
   createdAt: string;
   assignment?: Assignment | null;
   score?: Score | null;
+  submission?: Submission | null;
 }
 
 export interface Prompt {
@@ -199,6 +200,7 @@ export interface CurrentBiddingStateResponse {
   timerId: string | null;
   availableSlots: number;
   config: Pick<GameConfig, 'baseTime' | 'minBid' | 'slotsPerPrompt' | 'bidDurationSeconds'>;
+  codingState?: AdminCodingState;
   serverTime?: number;
   startTime?: number | null;
   endsAt?: number | null;
@@ -216,4 +218,75 @@ export interface RerunRoundResponse {
   totalPrompts?: number;
   resetWinners?: number[];
   status?: GameStatus;
+}
+
+export interface Submission {
+  id: number;
+  teamId: number;
+  githubUrl: string;
+  submittedAt: string;
+  updatedAt: string;
+}
+
+export interface TeamCodingState {
+  gameStatus: GameStatus;
+  isStarted: boolean;
+  startTime: number | null;
+  isPaused: boolean;
+  deadline: number | null;
+  remainingSeconds: number;
+  isExpired: boolean;
+}
+
+export interface AdminCodingState {
+  isStarted: boolean;
+  startTime: number | null;
+  isPaused: boolean;
+}
+
+export interface AdminSubmissionItem {
+  teamId: number;
+  teamName: string;
+  assignment: {
+    promptId: number;
+    promptTitle?: string;
+    bidMinutes: number;
+    round: number;
+    multiplier: number;
+  } | null;
+  submission: Submission | null;
+  deadline: number | null;
+  remainingSeconds: number;
+  isExpired: boolean;
+  isSubmitted: boolean;
+  isLate: boolean;
+}
+
+export interface SubmissionsResponse {
+  success: boolean;
+  gameStatus: GameStatus;
+  codingState: AdminCodingState;
+  submissions: AdminSubmissionItem[];
+}
+
+export interface TeamSubmissionResponse {
+  success: boolean;
+  submission: Submission | null;
+  assignment: {
+    promptId: number;
+    promptTitle?: string;
+    description?: string;
+    bidMinutes: number;
+    round: number;
+    multiplier: number;
+  } | null;
+  codingState: TeamCodingState;
+}
+
+export interface SubmitProjectResponse {
+  success: boolean;
+  message: string;
+  submission: Submission;
+  deadline: number;
+  remainingSeconds: number;
 }

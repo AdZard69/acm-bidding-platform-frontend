@@ -21,16 +21,19 @@ import {
   TrendingDown,
   Clock,
   History,
-  SlidersHorizontal
+  SlidersHorizontal,
+  FolderGit2,
+  Github,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useSocket } from '../context/SocketContext';
 import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
-import { Team, Prompt, GameConfig, LeaderboardEntry, Bid } from '../types';
+import { Team, Prompt, GameConfig, LeaderboardEntry, Bid, AdminSubmissionItem, AdminCodingState } from '../types';
 import { groupRoundBids, promptRounds } from '../utils/rounds';
 import { calculateFinalScore, calculateMultiplier, calculateBoostPercentage } from '../utils/multiplier';
 
-type AdminTab = 'controls' | 'teams' | 'prompts' | 'judging' | 'config' | 'reset';
+type AdminTab = 'controls' | 'teams' | 'prompts' | 'judging' | 'config' | 'reset' | 'submissions';
 
 export const AdminPage: React.FC = () => {
   const {
@@ -75,6 +78,115 @@ export const AdminPage: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const [bidHistory, setBidHistory] = useState<Bid[]>([]);
+  const [submissions, setSubmissions] = useState<AdminSubmissionItem[]>([]);
+  const [codingState, setCodingState] = useState<AdminCodingState>({ isStarted: false, startTime: null, isPaused: false });
+  const [loadingCoding, setLoadingCoding] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  const [submissionSearch, setSubmissionSearch] = useState('');
+  const [submissionFilter, setSubmissionFilter] = useState<'all' | 'submitted' | 'pending' | 'expired'>('all');
+
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchSubmissions = useCallback(async () => {
+    try {
+      const res = await api.listSubmissions();
+      if (res.success) {
+        setSubmissions(res.submissions);
+        setCodingState(res.codingState);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [fetchSubmissions, activeTab, gameStatus]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleCodingEvent = () => {
+      void fetchSubmissions();
+      void refreshState();
+    };
+    socket.on('coding:started', handleCodingEvent);
+    socket.on('coding:paused', handleCodingEvent);
+    socket.on('coding:resumed', handleCodingEvent);
+    socket.on('coding:reset', handleCodingEvent);
+    socket.on('submission:updated', handleCodingEvent);
+    return () => {
+      socket.off('coding:started', handleCodingEvent);
+      socket.off('coding:paused', handleCodingEvent);
+      socket.off('coding:resumed', handleCodingEvent);
+      socket.off('coding:reset', handleCodingEvent);
+      socket.off('submission:updated', handleCodingEvent);
+    };
+  }, [socket, fetchSubmissions, refreshState]);
+
+  const handleStartCoding = async () => {
+    if (codingState.isStarted && !confirm('Coding timers are already running. Do you want to restart the coding window for all teams?')) {
+      return;
+    }
+    setLoadingCoding(true);
+    try {
+      const res = await api.startCodingTimers();
+      setNotification({ type: 'success', text: res.message || 'Coding timers started for all teams!' });
+      await fetchSubmissions();
+      await refreshState();
+    } catch (err: any) {
+      setNotification({ type: 'error', text: err.message || 'Failed to start coding timers' });
+    } finally {
+      setLoadingCoding(false);
+    }
+  };
+
+  const handlePauseCoding = async () => {
+    setLoadingCoding(true);
+    try {
+      const res = await api.pauseCodingTimers();
+      setNotification({ type: 'success', text: res.message || 'Coding timers paused' });
+      await fetchSubmissions();
+      await refreshState();
+    } catch (err: any) {
+      setNotification({ type: 'error', text: err.message || 'Failed to pause coding timers' });
+    } finally {
+      setLoadingCoding(false);
+    }
+  };
+
+  const handleResumeCoding = async () => {
+    setLoadingCoding(true);
+    try {
+      const res = await api.resumeCodingTimers();
+      setNotification({ type: 'success', text: res.message || 'Coding timers resumed' });
+      await fetchSubmissions();
+      await refreshState();
+    } catch (err: any) {
+      setNotification({ type: 'error', text: err.message || 'Failed to resume coding timers' });
+    } finally {
+      setLoadingCoding(false);
+    }
+  };
+
+  const handleResetCoding = async (wipe: boolean = false) => {
+    if (!confirm(wipe ? 'Are you sure you want to reset the coding phase and WIPE all submitted GitHub URLs?' : 'Are you sure you want to reset coding timers?')) {
+      return;
+    }
+    setLoadingCoding(true);
+    try {
+      const res = await api.resetCodingTimers(wipe);
+      setNotification({ type: 'success', text: res.message || 'Coding timers reset successfully' });
+      await fetchSubmissions();
+      await refreshState();
+    } catch (err: any) {
+      setNotification({ type: 'error', text: err.message || 'Failed to reset coding timers' });
+    } finally {
+      setLoadingCoding(false);
+    }
+  };
 
   useEffect(() => {
     setTargetRound(gameStatus === 'round_ended' && currentRound === 1 && canStartRound2 ? 2 : currentRound || 1);
@@ -584,7 +696,8 @@ export const AdminPage: React.FC = () => {
           { id: 'prompts', label: `Prompts (${prompts.length})`, icon: FileCode },
           { id: 'judging', label: 'Judging', icon: Award },
           { id: 'config', label: 'Settings', icon: Settings },
-          { id: 'reset', label: 'Reset', icon: AlertTriangle }
+          { id: 'reset', label: 'Reset', icon: AlertTriangle },
+          { id: 'submissions', label: `Submissions (${submissions.filter((s) => s.isSubmitted).length}/${submissions.length})`, icon: FolderGit2 }
         ].map((tab) => {
           const Icon = tab.icon;
           const isSelected = activeTab === tab.id;
@@ -1610,6 +1723,341 @@ export const AdminPage: React.FC = () => {
           >
             Execute Reset
           </button>
+        </div>
+      )}
+
+      {/* TAB 7: SUBMISSIONS */}
+      {activeTab === 'submissions' && (
+        <div className="space-y-6 font-mono text-xs">
+          {/* Coding Control Bar */}
+          <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+              <div className="flex items-center gap-2.5">
+                <FolderGit2 className="w-5 h-5 text-[#D4AF37]" />
+                <div>
+                  <h3 className="text-white font-bold text-sm tracking-wider uppercase">Project Submissions & Coding Timers</h3>
+                  <p className="text-slate-400 text-[11px]">
+                    Manage the live coding phase countdowns and verify GitHub repository submissions per team.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                    codingState.isPaused
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                      : codingState.isStarted
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-surface-200 text-slate-400 border border-surface-border'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      codingState.isPaused
+                        ? 'bg-amber-400'
+                        : codingState.isStarted
+                        ? 'bg-emerald-400 animate-pulse'
+                        : 'bg-slate-500'
+                    }`}
+                  />
+                  {codingState.isPaused
+                    ? 'Coding Paused'
+                    : codingState.isStarted
+                    ? 'Coding In Progress'
+                    : 'Coding Not Started'}
+                </span>
+                <button
+                  onClick={fetchSubmissions}
+                  className="p-1.5 bg-surface-200 hover:bg-surface-50 text-slate-300 rounded border border-surface-border transition-colors"
+                  title="Refresh Submissions"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-surface-200/60 border border-surface-border">
+                <span className="text-slate-500 block text-[10px] uppercase">Assigned Teams</span>
+                <span className="text-base font-bold text-white">
+                  {submissions.filter((s) => s.assignment !== null).length}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-surface-200/60 border border-surface-border">
+                <span className="text-slate-500 block text-[10px] uppercase">Submissions Received</span>
+                <span className="text-base font-bold text-emerald-400">
+                  {submissions.filter((s) => s.isSubmitted).length} / {submissions.filter((s) => s.assignment !== null).length}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-surface-200/60 border border-surface-border">
+                <span className="text-slate-500 block text-[10px] uppercase">Pending Submissions</span>
+                <span className="text-base font-bold text-amber-400">
+                  {submissions.filter((s) => s.assignment !== null && !s.isSubmitted).length}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-surface-200/60 border border-surface-border">
+                <span className="text-slate-500 block text-[10px] uppercase">Phase Status</span>
+                <span className="text-base font-bold text-slate-200">
+                  {codingState.isPaused ? 'Paused' : codingState.isStarted ? 'Live' : 'Ready'}
+                </span>
+              </div>
+            </div>
+
+            {/* Timer Actions */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-surface-border">
+              <button
+                onClick={handleStartCoding}
+                disabled={loadingCoding}
+                className="py-2.5 px-5 rounded-lg bg-[#D4AF37] hover:bg-[#E5C158] text-[#0B0B0B] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors disabled:opacity-50 shadow-md"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>{codingState.isStarted ? 'Restart Coding Timers' : 'Start Coding Timers'}</span>
+              </button>
+
+              {codingState.isStarted && (
+                <>
+                  {codingState.isPaused ? (
+                    <button
+                      onClick={handleResumeCoding}
+                      disabled={loadingCoding}
+                      className="py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Resume Timers</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePauseCoding}
+                      disabled={loadingCoding}
+                      className="py-2.5 px-4 rounded-lg bg-amber-600 hover:bg-amber-500 text-black font-bold uppercase flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      <Pause className="w-4 h-4" />
+                      <span>Pause Timers</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleResetCoding(false)}
+                    disabled={loadingCoding}
+                    className="py-2.5 px-4 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border font-bold uppercase flex items-center gap-2 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Reset Timers</span>
+                  </button>
+                  <button
+                    onClick={() => handleResetCoding(true)}
+                    disabled={loadingCoding}
+                    className="py-2.5 px-4 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold uppercase flex items-center gap-2 transition-colors disabled:opacity-50 ml-auto"
+                    title="Reset timers and wipe all submitted GitHub URLs"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Wipe Submissions</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Submissions Table Card */}
+          <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-surface-border pb-3">
+              <div className="flex items-center gap-2">
+                <Github className="w-4 h-4 text-white" />
+                <span className="font-bold text-white uppercase text-sm">Teams & Submission Details</span>
+                <span className="text-slate-400 text-xs">({submissions.length} teams registered)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  placeholder="Filter team / prompt..."
+                  value={submissionSearch}
+                  onChange={(e) => setSubmissionSearch(e.target.value)}
+                  className="px-2.5 py-1 bg-surface-200 border border-surface-border rounded text-white text-xs w-full sm:w-48 placeholder-slate-500"
+                />
+                <select
+                  value={submissionFilter}
+                  onChange={(e) => setSubmissionFilter(e.target.value as any)}
+                  className="px-2.5 py-1 bg-surface-200 border border-surface-border rounded text-white text-xs"
+                >
+                  <option value="all">All Teams</option>
+                  <option value="submitted">Submitted Only</option>
+                  <option value="pending">Pending Only</option>
+                  <option value="expired">Expired Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto rounded-lg border border-surface-border">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-surface-200/70 border-b border-surface-border text-slate-400 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="py-2.5 px-3">Team</th>
+                    <th className="py-2.5 px-3">Assigned Problem</th>
+                    <th className="py-2.5 px-3 text-center">Committed Time</th>
+                    <th className="py-2.5 px-3 text-center">Countdown / Deadline</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3">GitHub Project URL</th>
+                    <th className="py-2.5 px-3 text-right">Submitted At</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-border">
+                  {submissions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                        No teams available. Create teams and run bidding to assign problems.
+                      </td>
+                    </tr>
+                  ) : (
+                    submissions
+                      .filter((item) => {
+                        if (submissionSearch) {
+                          const query = submissionSearch.toLowerCase();
+                          const matchesTeam = item.teamName.toLowerCase().includes(query);
+                          const matchesPrompt = item.assignment?.promptTitle?.toLowerCase().includes(query);
+                          if (!matchesTeam && !matchesPrompt) return false;
+                        }
+                        if (submissionFilter === 'submitted') return item.isSubmitted;
+                        if (submissionFilter === 'pending') return !item.isSubmitted;
+                        if (submissionFilter === 'expired') {
+                          if (!codingState.startTime || !item.assignment) return false;
+                          const deadline = codingState.startTime + item.assignment.bidMinutes * 60 * 1000;
+                          return currentTime > deadline;
+                        }
+                        return true;
+                      })
+                      .map((item) => {
+                        let remainingSecs = 0;
+                        let isExpired = false;
+                        let deadlineFormatted = '';
+
+                        if (codingState.startTime && item.assignment) {
+                          const deadline = codingState.startTime + item.assignment.bidMinutes * 60 * 1000;
+                          deadlineFormatted = new Date(deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                          const diff = Math.ceil((deadline - currentTime) / 1000);
+                          remainingSecs = Math.max(0, diff);
+                          isExpired = currentTime > deadline;
+                        }
+
+                        const formatRemaining = (seconds: number) => {
+                          if (!codingState.startTime) return 'NOT STARTED';
+                          if (codingState.isPaused) return 'PAUSED';
+                          if (seconds <= 0) return 'EXPIRED';
+                          const h = Math.floor(seconds / 3600);
+                          const m = Math.floor((seconds % 3600) / 60);
+                          const s = seconds % 60;
+                          if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+                          return `${m}m ${s.toString().padStart(2, '0')}s`;
+                        };
+
+                        return (
+                          <tr key={item.teamId} className="hover:bg-surface-50/50 transition-colors">
+                            <td className="py-2.5 px-3 font-bold text-white">
+                              <div className="flex items-center gap-1.5">
+                                <span>{item.teamName}</span>
+                                <span className="text-[10px] text-slate-500 font-normal">#{item.teamId}</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              {item.assignment ? (
+                                <div>
+                                  <span className="text-slate-200 font-medium block">
+                                    {item.assignment.promptTitle || `Prompt #${item.assignment.promptId}`}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">
+                                    Round {item.assignment.round} • Multiplier: {item.assignment.multiplier.toFixed(3)}x
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500 italic">No prompt assigned</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {item.assignment ? (
+                                <span className="px-2 py-0.5 rounded bg-surface-200 text-amber-400 font-bold">
+                                  {item.assignment.bidMinutes} mins
+                                </span>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono">
+                              {item.assignment ? (
+                                !codingState.startTime ? (
+                                  <span className="text-slate-500">Timer not started</span>
+                                ) : isExpired ? (
+                                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold border border-rose-500/30">
+                                    EXPIRED
+                                  </span>
+                                ) : (
+                                  <div>
+                                    <span
+                                      className={`font-bold ${
+                                        remainingSecs < 600
+                                          ? 'text-amber-400 animate-pulse'
+                                          : 'text-emerald-400'
+                                      }`}
+                                    >
+                                      {formatRemaining(remainingSecs)}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 block">
+                                      Due by {deadlineFormatted}
+                                    </span>
+                                  </div>
+                                )
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {item.isSubmitted ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px]">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>{item.isLate ? 'Late' : 'Submitted'}</span>
+                                </span>
+                              ) : isExpired ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px]">
+                                  <span>Missed</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-200 text-slate-400 text-[10px]">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Pending</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono">
+                              {item.submission?.githubUrl ? (
+                                <a
+                                  href={item.submission.githubUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[#D4AF37] hover:underline font-bold max-w-[200px] truncate"
+                                  title={item.submission.githubUrl}
+                                >
+                                  <Github className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{item.submission.githubUrl.replace(/^https?:\/\/(www\.)?github\.com\//, '')}</span>
+                                  <ExternalLink className="w-3 h-3 shrink-0 opacity-70" />
+                                </a>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-slate-400 text-[11px]">
+                              {item.submission?.submittedAt ? (
+                                new Date(item.submission.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

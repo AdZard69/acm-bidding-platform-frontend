@@ -13,7 +13,10 @@ import {
   ClockStatusResponse,
   ClockSyncResponse,
   CurrentBiddingStateResponse,
-  RerunRoundResponse
+  RerunRoundResponse,
+  SubmissionsResponse,
+  TeamSubmissionResponse,
+  SubmitProjectResponse
 } from '../types';
 
 const DEFAULT_API_BASE =
@@ -418,6 +421,50 @@ class ApiClient {
 
   async getPublicLeaderboard(): Promise<{ success: boolean; leaderboard: LeaderboardEntry[] }> {
     return this.request('/bid/leaderboard');
+  }
+
+  // --- Team Submission API ---
+
+  async submitProject(githubUrl: string): Promise<SubmitProjectResponse> {
+    return this.request<SubmitProjectResponse>('/bid/submission', {
+      method: 'POST',
+      body: JSON.stringify({ githubUrl })
+    });
+  }
+
+  async getMySubmission(): Promise<TeamSubmissionResponse> {
+    return this.request<TeamSubmissionResponse>('/bid/submission');
+  }
+
+  // --- Admin: Submissions & Coding Timers ---
+
+  async listSubmissions(): Promise<SubmissionsResponse> {
+    return this.request<SubmissionsResponse>('/admin/submissions');
+  }
+
+  async startCodingTimers(): Promise<{ success: boolean; message: string; status: string; coding: unknown }> {
+    return this.request('/admin/coding/start', {
+      method: 'POST'
+    });
+  }
+
+  async pauseCodingTimers(): Promise<{ success: boolean; message: string; coding: unknown }> {
+    return this.request('/admin/coding/pause', {
+      method: 'POST'
+    });
+  }
+
+  async resumeCodingTimers(): Promise<{ success: boolean; message: string; coding: unknown }> {
+    return this.request('/admin/coding/resume', {
+      method: 'POST'
+    });
+  }
+
+  async resetCodingTimers(wipeSubmissions: boolean = false): Promise<{ success: boolean; message: string }> {
+    return this.request('/admin/coding/reset', {
+      method: 'POST',
+      body: JSON.stringify({ wipeSubmissions })
+    });
   }
 }
 
