@@ -9,7 +9,7 @@ Clean, minimalist frontend web application for **"Bid and Code"** — an open-au
 In "Bid and Code", teams bid time commitments (in minutes) for problem statements:
 - **Formula**: `Multiplier = e ^ (k × (1 - bid / 120))`
   - Round 1: `k = 1.0` (Multipliers from 1.000x at 120 mins to 2.117x at 30 mins)
-  - Every prompt round uses `k = 1.0`; later prompts have no scoring penalty.
+  - Round 2 uses `k = 0.7`; scoring details are visible only to admins.
 - **Rules**:
   - Open auction: bids stream in real-time.
   - Anti-collision: no two teams can bid the exact same minute commitment on the same prompt.
@@ -29,13 +29,14 @@ In "Bid and Code", teams bid time commitments (in minutes) for problem statement
 
 2. **Team Bidding Portal (`/team`)**:
    - Clean bidding console with sliders and presets (30m, 45m, 60m...).
-   - Real-time multiplier and score boost preview.
+   - Prompt progress within each pass, with guidance for unassigned teams in later rounds.
    - Live anti-collision conflict detection preventing duplicate minute bids.
    - Awarded problem statement viewer once slots are won.
-   - Official score card showing judge score, multiplier, and final score.
+   - Official score card showing judge score and final score.
 
 3. **Game Master Admin Room (`/admin`)**:
-   - Operational controls: Start sequential prompt rounds, Pause, Resume, Extend Timer (+15s, +30s, +60s), Next Round / Prompt, End Round.
+   - Operational controls: Start bidding passes, Pause, Resume, Extend Timer (+15s, +30s, +60s), Next Prompt / Pass, Close Current Prompt.
+   - Admin-only multiplier, boost and k-factor information.
    - Team Management: List, create, toggle active status, and delete teams.
    - Prompt Management: Create problem statements, edit descriptions, adjust display order.
    - Judging Panel: Enter raw scores (0-100) per team with instant calculated final scores.
@@ -108,8 +109,10 @@ Run `npm test` for countdown behavior tests and `npm run build` for TypeScript
 checking and the production bundle.
 
 
-Each prompt is one round in display order. At timer expiry, that round closes and
-its prompt, bids and winners remain visible. Only the admin's Next action opens
-the next prompt. History tabs group by prompt round, including legacy records
-stored under a shared bidding pass. Reloading or reconnecting retains the closed
-round until the admin advances. Every prompt round uses the same multiplier curve.
+Round 1 is the first pass through all prompts in display order. Moving to the
+next prompt keeps the round number. After a complete pass, another round becomes
+available if unassigned teams and open prompt slots remain. Later passes revisit
+prompts with open slots; assigned teams keep their problem and cannot bid again.
+Round 2 is the final pass. Each prompt has its own countdown. At expiry, bidding closes and the prompt, bids
+and winners stay visible until the admin advances. History tabs group all prompts
+by their actual pass. Scoring details appear only in admin views.

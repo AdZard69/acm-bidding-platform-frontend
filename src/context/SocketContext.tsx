@@ -14,9 +14,8 @@ type ActionResult = { success: boolean; message?: string };
 
 const initialState: CurrentBiddingStateResponse = {
   success: true, status: 'waiting', currentRound: 0, currentPrompt: null,
-  currentPromptIndex: 0, totalPromptsInRound: 0, totalPrompts: 0,
-  hasNextPrompt: false, canStartRound2: false, unassignedTeamsCount: 0,
-  rounds: [], totalRounds: 0, hasNextRound: false, nextRoundNumber: null,
+  currentPromptIndex: 0, totalPromptsInRound: 0, canStartRound2: false, unassignedTeamsCount: 0,
+  rounds: [], totalRounds: 0, openedPrompts: [], promptNumber: 0, totalPrompts: 0, unassignedTeams: 0, passComplete: false, hasNextPrompt: false, nextPromptNumber: null, hasNextRound: false, nextRoundNumber: null,
   availableSlots: 0, secondsRemaining: 0, remainingMs: 0, durationSeconds: 60, timerId: null,
   startTime: null, endsAt: null, isPaused: false, hasExpired: true, bids: [],
   config: { baseTime: 120, minBid: 30, slotsPerPrompt: 3, bidDurationSeconds: 60 }
@@ -57,13 +56,13 @@ function useBiddingState() {
     setState(next);
     setSecondsRemaining(countdown.current.secondsRemaining());
     setIsTimerSynced(true);
-    if (previous.timerId !== next.timerId && next.status === 'bidding') {
+    if (next.status === 'bidding' && (previous.timerId !== next.timerId || previous.status === 'round_ended')) {
       setLastWinners(null);
       setRoundSummary(null);
       // A rerun has the same prompt/round but a new bidding session.
       if (previous.timerId !== null) {
         privateEventVersion.current++;
-        setMyAssignment((assignment) => assignment && assignment.promptId === next.currentPrompt?.id && assignment.round === next.currentRound ? null : assignment);
+        setMyAssignment((assignment) => previous.currentRound === next.currentRound && assignment?.round === next.currentRound && assignment?.promptId === next.currentPrompt?.id ? null : assignment);
       }
     }
     if (next.status === 'round_ended') {
@@ -386,16 +385,15 @@ function useBiddingState() {
 
   return {
     socket, isConnected, gameStatus: state.status, currentRound: state.currentRound,
-    currentPromptIndex: state.currentPromptIndex ?? 0,
-    totalPromptsInRound: state.totalPromptsInRound ?? state.totalPrompts ?? 0,
-    hasNextPrompt: state.hasNextPrompt ?? false,
-    canStartRound2: state.canStartRound2 ?? false,
-    unassignedTeamsCount: state.unassignedTeamsCount ?? 0,
+    promptNumber: state.promptNumber, totalPrompts: state.totalPrompts,
+    unassignedTeams: state.unassignedTeams, passComplete: state.passComplete,
+    hasNextPrompt: state.hasNextPrompt, nextPromptNumber: state.nextPromptNumber,
     currentPrompt: state.currentPrompt, bids: state.bids, secondsRemaining,
     timerId: state.timerId,
     endsAt: state.endsAt ?? null, startTime: state.startTime ?? null, durationSeconds: state.durationSeconds,
     isPaused: state.status === 'paused', isExpired: secondsRemaining <= 0,
     biddingConfig: state.config, availableSlots: state.availableSlots, isTimerSynced,
+    openedPrompts: state.openedPrompts,
     rounds: state.rounds, totalRounds: state.totalRounds, hasNextRound: state.hasNextRound, nextRoundNumber: state.nextRoundNumber,
     codingState: state.codingState,
     lastWinners, myAssignment, myScore, roundSummary, refreshState, placeBid, updateBid: placeBid,
@@ -405,7 +403,8 @@ function useBiddingState() {
     adminExtend: (extra: number) => adminAction(() => api.extendRound(extra, stateRef.current.timerId)),
     adminNextPrompt: () => adminAction(() => api.nextPrompt(stateRef.current.timerId)),
     adminEndRound: () => adminAction(() => api.endRound(stateRef.current.timerId)),
-    adminRerunRound: (round?: number) => adminAction(() => api.rerunRound(round))
+    adminRerunRound: (round?: number) => adminAction(() => api.rerunRound(round)),
+    adminRerunPrompt: (promptId: number, round: number) => adminAction(() => api.rerunPrompt(promptId, round, stateRef.current.timerId))
   };
 }
 

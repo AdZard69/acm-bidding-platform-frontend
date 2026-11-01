@@ -343,6 +343,13 @@ class ApiClient {
     });
   }
 
+  async rerunPrompt(promptId: number, round: number, timerId?: string | null): Promise<CurrentBiddingStateResponse & { message: string }> {
+    return this.request('/admin/prompt/rerun', {
+      method: 'POST',
+      body: JSON.stringify({ promptId, round, timerId })
+    });
+  }
+
   // --- Admin: Scores & Leaderboard ---
 
   async submitScore(

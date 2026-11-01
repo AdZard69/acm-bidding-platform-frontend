@@ -19,6 +19,8 @@ export const HomePage: React.FC = () => {
     isConnected,
     gameStatus,
     currentRound,
+    promptNumber,
+    totalPrompts,
     secondsRemaining,
     isPaused,
     isExpired,
@@ -41,7 +43,7 @@ export const HomePage: React.FC = () => {
           BID <span className="font-editorial italic font-normal text-[#D4AF37]">&</span> CODE
         </h1>
         <p className="text-sm sm:text-base text-[#A8A29E] font-sans max-w-xl leading-relaxed">
-          The auction where time is currency. Bid the minutes you commit to build—lower bids earn higher score multipliers.
+          The auction where time is currency. Bid the minutes your team commits to build.
         </p>
       </div>
 
@@ -61,7 +63,7 @@ export const HomePage: React.FC = () => {
           ) : (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[#A8A29E]">
               <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
-              Waiting for Round
+              Waiting for Bidding
             </span>
           )}
         </div>
@@ -71,7 +73,7 @@ export const HomePage: React.FC = () => {
 
           <div>
             <span className="text-[#7A756D] mr-1.5">ROUND:</span>
-            <strong className="text-[#F4F0EA]">{currentRound > 0 ? `R${currentRound}` : '—'}</strong>
+            <strong className="text-[#F4F0EA]">{currentRound > 0 ? `Round ${currentRound}` : '—'}</strong>
           </div>
           <div>
             <span className="text-[#7A756D] mr-1.5">TIMER:</span>
@@ -86,7 +88,7 @@ export const HomePage: React.FC = () => {
           <div>
             <span className="text-[#7A756D] mr-1.5">PROMPT:</span>
             <strong className="text-[#F4F0EA] truncate max-w-[200px] inline-block align-bottom">
-              {currentPrompt ? currentPrompt.title : 'None active'}
+              {currentPrompt ? `${currentPrompt.title} (${promptNumber}/${totalPrompts})` : 'None active'}
             </strong>
           </div>
         </div>

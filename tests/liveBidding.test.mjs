@@ -7,8 +7,10 @@ import { loadSource, hookRuntime, deferred, flushPromises } from './helpers/runt
 const prompt = { id: 1, title: 'Build a game', description: 'A multiplayer game', displayOrder: 1 };
 const snapshot = (overrides = {}) => ({
   success: true, status: 'bidding', currentRound: 1, currentPrompt: prompt,
-  rounds: [1, 2, 3].map((id) => ({ roundNumber: id, promptId: id })),
-  totalRounds: 3, hasNextRound: true, nextRoundNumber: 2,
+  rounds: [{ roundNumber: 1, promptIds: [1, 2, 3] }],
+  openedPrompts: [{ roundNumber: 1, promptId: 1 }],
+  totalRounds: 1, hasNextRound: false, nextRoundNumber: 1,
+  promptNumber: 1, totalPrompts: 3, passComplete: false, unassignedTeams: 3, hasNextPrompt: true, nextPromptNumber: 2,
   availableSlots: 3, remainingMs: 60000, secondsRemaining: 60, durationSeconds: 60,
   timerId: 'first-run', isPaused: false, hasExpired: false,
   config: { baseTime: 120, minBid: 30, slotsPerPrompt: 3, bidDurationSeconds: 60 },
@@ -236,9 +238,10 @@ test('admin renders a new prompt timer immediately without keeping the previous 
   assert.equal(app.render().currentPrompt, null);
   assert.equal(app.render().bids.length, 0);
   assert.match(app.adminHTML(), /TIME LEFT<\/span><span[^>]*>60s/);
+  assert.match(app.adminHTML(), /<span>Round 2<\/span>/);
 });
 
-test('round slider and number input select actions while keeping round controls visible', async (t) => {
+test('round and prompt rerun selectors keep both actions without a round slider', async (t) => {
   const runtime = hookRuntime();
   runtime.react.createElement = React.createElement;
   runtime.react.Fragment = React.Fragment;
@@ -247,7 +250,8 @@ test('round slider and number input select actions while keeping round controls 
   const socketState = {
     ...state, gameStatus: state.status, isExpired: true, rounds: state.rounds,
     adminStartRound: async (round) => { actions.push(['start', round]); return { success: true }; },
-    adminRerunRound: async (round) => { actions.push(['rerun', round]); return { success: true }; }
+    adminRerunRound: async (round) => { actions.push(['rerun', round]); return { success: true }; },
+    adminRerunPrompt: async (promptId, round) => { actions.push(['prompt', promptId, round]); return { success: true }; }
   };
   const api = {
     listTeams: async () => ({ success: true, teams: [] }),
@@ -274,18 +278,124 @@ test('round slider and number input select actions while keeping round controls 
   const button = (label) => nodes().find((node) => node.type === 'button' && text(node) === label);
   nodes();
   await flushPromises();
-  const slider = nodes().find((node) => node.type === 'input' && node.props.type === 'range');
-  slider.props.onChange({ target: { value: '2' } });
-  assert.ok(button('Start Round 2'));
-  assert.ok(button('Rerun Round 2'));
-  assert.ok(nodes().some((node) => node.type === 'input' && node.props.type === 'range'));
+  assert.ok(!nodes().some((node) => node.type === 'input' && node.props.type === 'range'));
+  assert.ok(button('Open Round 1'));
+  assert.ok(button('Rerun Round 1'));
+  assert.ok(nodes().some((node) => node.type === 'select' && node.props['aria-label'] === 'Round to control'));
   assert.ok(!nodes().some((node) => text(node) === 'Return to Controls'));
-  const roundInput = nodes().find((node) => node.props['aria-label'] === 'Round number to control');
+  const roundInput = nodes().find((node) => node.props['aria-label'] === 'Round to control');
   roundInput.props.onChange({ target: { value: '1' } });
-  await button('Start Round 1').props.onClick();
+  await button('Open Round 1').props.onClick();
   await button('Rerun Round 1').props.onClick();
-  assert.deepEqual(actions, [['start', 1], ['rerun', 1]]);
-  assert.ok(nodes().some((node) => node.type === 'input' && node.props.type === 'range'));
+  const promptSelector = nodes().find((node) => node.props['aria-label'] === 'Prompt to rerun');
+  promptSelector.props.onChange({ target: { value: '1:1' } });
+  assert.equal(button(' Rerun Prompt').props.disabled, false);
+  await button(' Rerun Prompt').props.onClick();
+  assert.deepEqual(actions, [['start', 1], ['rerun', 1], ['prompt', 1, 1]]);
+  socketState.gameStatus = 'bidding';
+  socketState.currentPrompt = { ...prompt, id: 2 };
+  assert.equal(button(' Rerun Prompt').props.disabled, true);
+  socketState.gameStatus = 'round_ended';
+  assert.equal(button(' Rerun Prompt').props.disabled, false);
+  assert.ok(nodes().some((node) => node.type === 'select' && node.props['aria-label'] === 'Round to control'));
+  assert.ok(!button('Round 2'));
+  api.listBids = async () => ({ success: true, bids: [{ teamId: 2, promptId: 1, round: 2, bidMinutes: 45 }] });
+  runtime.cleanup();
+  const reloaded = hookRuntime();
+  Object.assign(runtime.react, reloaded.react);
+  reloaded.react.createElement = React.createElement;
+  reloaded.react.Fragment = React.Fragment;
+  reloaded.render(AdminPage);
+  await flushPromises();
+  const restoredNodes = flatten(reloaded.render(AdminPage));
+  assert.ok(restoredNodes.some((node) => node.type === 'button' && text(node) === 'Round 2Bids'));
+  reloaded.cleanup();
+});
+
+
+test('a later pass on the same prompt preserves an earlier winner assignment', async (t) => {
+  const app = setup(t);
+  app.receive('game:status', snapshot({ status: 'round_ended', remainingMs: 0 }));
+  app.receive('assignment:received', { promptId: 1, title: prompt.title, bidMinutes: 40, round: 1, multiplier: 1.9 });
+  app.receive('game:status', snapshot({ currentRound: 2, timerId: 'second-pass', promptNumber: 1 }));
+  assert.equal(app.render().myAssignment.round, 1);
+  assert.match(app.teamHTML(), /Assigned Problem Statement/);
+  app.receive('game:status', snapshot({ currentRound: 2, timerId: 'second-pass-rerun', promptNumber: 1 }));
+  assert.equal(app.render().myAssignment.round, 1);
+  assert.doesNotMatch(app.teamHTML(), /multiplier|boost|k\s*=/i);
+});
+
+test('team and arena labels separate the pass from prompt progress while admin retains scoring details', async (t) => {
+  const app = setup(t);
+  app.receive('game:status', snapshot({ promptNumber: 2, status: 'round_ended', remainingMs: 0,
+    bids: [{ teamId: 1, promptId: 1, round: 1, bidMinutes: 40, teamName: 'One' }] }));
+  const team = app.teamHTML();
+  assert.match(team, /ROUND 1 · PROMPT 2 \/ 3/);
+  assert.match(team, /Waiting for the next prompt/);
+  assert.doesNotMatch(team, /multiplier|boost|k\s*=/i);
+  assert.match(app.arenaHTML(), /ROUND 1 · PROMPT 2 \/ 3/);
+  assert.match(app.adminHTML(), /Scoring k = 1.0/);
+  assert.match(app.adminHTML(), /Multiplier/);
+  app.receive('game:status', snapshot({ promptNumber: 3, status: 'round_ended', remainingMs: 0,
+    passComplete: true, nextRoundNumber: 2, hasNextRound: true, nextPromptNumber: 1 }));
+  assert.match(app.teamHTML(), /Waiting for the next prompt/);
+});
+
+
+test('the shared homepage and team leaderboard do not show multiplier explanations', (t) => {
+  const app = setup(t);
+  const { HomePage } = loadSource('pages/HomePage.tsx', { ...app.mocks,
+    'react-router-dom': { Link: ({ to, children, ...props }) => React.createElement('a', { href: to, ...props }, children) }
+  });
+  const { LeaderboardPage } = loadSource('pages/LeaderboardPage.tsx', { ...app.mocks,
+    '../utils/multiplier': loadSource('utils/multiplier.ts')
+  });
+  assert.doesNotMatch(renderToStaticMarkup(React.createElement(HomePage)), /multiplier|boost|k\s*=/i);
+  assert.doesNotMatch(renderToStaticMarkup(React.createElement(LeaderboardPage)), /multiplier|boost|k\s*=/i);
+});
+
+
+test('refreshing during Round 2 restores its navigation before complete metadata arrives', async (t) => {
+  const app = setup(t, 'admin');
+  app.receive('timer:tick', { timerId: 'round-2-reload', promptId: 1, roundNumber: 2, status: 'bidding', remainingMs: 45000 });
+  assert.equal(app.render().rounds.length, 0);
+  assert.match(app.adminHTML(), /<span>Round 2<\/span>/);
+  app.publicRequests.at(-1).resolve(snapshot({ currentRound: 2, timerId: 'round-2-reload',
+    rounds: [{ roundNumber: 1, promptIds: [1, 2, 3] }], remainingMs: 45000 }));
+  await flushPromises();
+  const html = app.adminHTML();
+  assert.match(html, /<span>Round 2<\/span>/);
+  assert.doesNotMatch(html, /View Bids \(|Winners? Assigned|Round 1 is|pass through the prompts/);
+  assert.doesNotMatch(app.teamHTML(), /Each round is|Round 2 starts after|pass through the prompts/);
+});
+
+
+test('arena keeps one countdown and one bidding status', (t) => {
+  const app = setup(t);
+  app.receive('game:status', snapshot());
+  const { BiddingTimerBadge } = loadSource('components/BiddingTimerBadge.tsx', app.mocks);
+  const { ArenaPage } = loadSource('pages/ArenaPage.tsx', {
+    ...app.mocks, '../components/BiddingTimerBadge': { BiddingTimerBadge }
+  });
+  const html = renderToStaticMarkup(React.createElement(ArenaPage));
+  assert.equal((html.match(/STATUS:/g) || []).length, 1);
+  assert.equal((html.match(/01:00/g) || []).length, 1);
+  assert.doesNotMatch(html, /Bidding countdown/);
+});
+
+
+test('prompt rerun commands include the selected round and active session and apply the new snapshot', async (t) => {
+  const app = setup(t, 'admin');
+  app.receive('game:status', snapshot({ status: 'round_ended', remainingMs: 0 }));
+  let input;
+  app.api.rerunPrompt = async (...args) => {
+    input = args;
+    return snapshot({ timerId: 'prompt-rerun' });
+  };
+  const result = await app.render().adminRerunPrompt(1, 1);
+  assert.equal(result.success, true);
+  assert.deepEqual(input, [1, 1, 'first-run']);
+  assert.equal(app.render().timerId, 'prompt-rerun');
 });
 
 
@@ -296,4 +406,27 @@ test('round 2 reopening the same prompt preserves a round 1 winner assignment', 
   app.receive('round:started', snapshot({ timerId: 'round-two', currentRound: 2 }));
   assert.equal(app.render().myAssignment?.round, 1);
   assert.equal(app.render().myAssignment?.title, prompt.title);
+});
+
+test('extending a closed prompt reopens bidding and clears provisional winners across team and arena views', (t) => {
+  const app = setup(t);
+  app.receive('game:status', snapshot({ status: 'round_ended', remainingMs: 0,
+    winners: [{ teamId: 1, teamName: 'One', bidMinutes: 40, multiplier: 1.5 }] }));
+  app.receive('assignment:received', { promptId: 1, title: prompt.title, bidMinutes: 40, round: 1 });
+  app.receive('assignment:cleared');
+  app.receive('timer:extended', { timerId: 'first-run', status: 'bidding', remainingMs: 15000 });
+  assert.equal(app.render().lastWinners, null);
+  assert.equal(app.render().myAssignment, null);
+  assert.equal(app.render().secondsRemaining, 15);
+  assert.match(app.teamHTML(), /15s left to bid/);
+  assert.doesNotMatch(app.arenaHTML(), /Awarded Winners/);
+});
+
+test('arena highlights the lowest three bids out of four teams', (t) => {
+  const app = setup(t);
+  app.receive('game:status', snapshot({ availableSlots: 3,
+    bids: [40, 45, 50, 55].map((bidMinutes, index) => ({ teamId: index + 1, promptId: 1, round: 1, bidMinutes })) }));
+  const html = app.arenaHTML();
+  assert.match(html, /Lowest 3 Qualify/);
+  assert.equal((html.match(/border-emerald-500\/40/g) || []).length, 3);
 });

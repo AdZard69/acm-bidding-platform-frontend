@@ -89,7 +89,7 @@ export interface LeaderboardEntry {
 
 export interface RoundDefinition {
   roundNumber: number;
-  promptId: number;
+  promptIds: number[];
 }
 
 export interface GameConfig {
@@ -99,7 +99,7 @@ export interface GameConfig {
   maxTeams: number; // default 10
   slotsPerPrompt: number; // default 3
   bidDurationSeconds: number; // default 60
-  currentRound: number; // 0 before bidding; prompt position thereafter
+  currentRound: number; // 0 before bidding; pass number thereafter
   currentPromptIndex: number; // 0-based
   status: GameStatus;
   updatedAt?: string;
@@ -182,16 +182,21 @@ export interface CurrentBiddingStateResponse {
   currentRound: number;
   currentPromptIndex?: number;
   promptIndex?: number;
-  totalPrompts?: number;
   totalPromptsInRound?: number;
-  hasNextPrompt?: boolean;
   canStartRound2?: boolean;
   unassignedTeamsCount?: number;
   currentPrompt: Prompt | null;
-  rounds?: RoundDefinition[];
-  totalRounds?: number;
-  hasNextRound?: boolean;
-  nextRoundNumber?: number | null;
+  rounds: RoundDefinition[];
+  totalRounds: number;
+  openedPrompts: { roundNumber: number; promptId: number }[];
+  promptNumber: number;
+  totalPrompts: number;
+  unassignedTeams: number;
+  passComplete: boolean;
+  hasNextPrompt: boolean;
+  nextPromptNumber: number | null;
+  hasNextRound: boolean;
+  nextRoundNumber: number | null;
   winners?: WinnerResult[];
   summary?: RoundEndedSummary | null;
   secondsRemaining: number;
@@ -215,7 +220,6 @@ export interface RerunRoundResponse {
   round: number;
   prompt?: Prompt;
   promptIndex?: number;
-  totalPrompts?: number;
   resetWinners?: number[];
   status?: GameStatus;
 }

@@ -7,17 +7,17 @@ import {
   TrendingDown
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
-import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
 
 export const ArenaPage: React.FC = () => {
   const {
     isConnected,
     gameStatus,
     currentRound,
-    currentPromptIndex,
-    totalPromptsInRound,
+    promptNumber,
+    totalPrompts,
+    passComplete,
+    unassignedTeams,
     hasNextPrompt,
-    hasNextRound,
     currentPrompt,
     secondsRemaining,
     isPaused,
@@ -76,15 +76,9 @@ export const ArenaPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <BiddingTimerBadge compact />
-
           <div className="px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-border font-mono text-xs text-slate-300">
-            STATUS: <strong className="text-white uppercase">{gameStatus}</strong>
-            {currentRound > 0 && (
-              <span className="ml-2 text-brand-amber">
-                • R{currentRound} P{currentPromptIndex + 1}
-              </span>
-            )}
+            STATUS: <strong className="text-white uppercase">{gameStatus === 'round_ended' ? passComplete ? 'Pass complete' : 'Prompt closed' : gameStatus}</strong>
+            {currentRound > 0 && <span className="ml-2 text-brand-amber">• R{currentRound}</span>}
           </div>
 
           <button
@@ -133,11 +127,9 @@ export const ArenaPage: React.FC = () => {
             </div>
           </div>
 
-          {gameStatus === 'round_ended' && (
-            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm font-mono">
-              Round {currentRound} · Prompt {currentPromptIndex + 1} complete. {hasNextPrompt ? 'Waiting for admin to advance to next prompt.' : (currentRound === 1 ? 'Round 1 complete.' : 'Bidding complete.')}
-            </div>
-          )}
+          {gameStatus === 'round_ended' && <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm font-mono">
+            {hasNextPrompt ? 'Waiting for the next prompt.' : unassignedTeams > 0 ? 'No open slots remain.' : 'All teams assigned.'}
+          </div>}
 
           {/* Active Prompt Card */}
           <div className="flex-1 p-6 rounded-xl bg-surface-100 border border-surface-border flex flex-col justify-between">
@@ -145,7 +137,7 @@ export const ArenaPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="px-2.5 py-0.5 rounded bg-surface-50 text-brand-cyan border border-surface-border font-bold">
-                    ROUND {currentRound} · PROMPT {currentPromptIndex + 1}{totalPromptsInRound > 0 ? ` OF ${totalPromptsInRound}` : ''} {currentRound === 2 ? '(k = 0.7)' : '(k = 1.0)'}
+                    ROUND {currentRound} · PROMPT {promptNumber} / {totalPrompts}
                   </span>
                   <span className="text-slate-400">{biddingConfig.slotsPerPrompt} Winning Slots</span>
                 </div>
