@@ -63,7 +63,7 @@ function useBiddingState() {
       // A rerun has the same prompt/round but a new bidding session.
       if (previous.timerId !== null) {
         privateEventVersion.current++;
-        setMyAssignment((assignment) => assignment?.promptId === next.currentPrompt?.id ? null : assignment);
+        setMyAssignment((assignment) => assignment && assignment.promptId === next.currentPrompt?.id && assignment.round === next.currentRound ? null : assignment);
       }
     }
     if (next.status === 'round_ended') {

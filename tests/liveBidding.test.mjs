@@ -287,3 +287,13 @@ test('round slider and number input select actions while keeping round controls 
   assert.deepEqual(actions, [['start', 1], ['rerun', 1]]);
   assert.ok(nodes().some((node) => node.type === 'input' && node.props.type === 'range'));
 });
+
+
+test('round 2 reopening the same prompt preserves a round 1 winner assignment', async (t) => {
+  const app = setup(t);
+  app.receive('round:started', snapshot());
+  app.receive('assignment:received', { promptId: 1, title: prompt.title, bidMinutes: 40, round: 1 });
+  app.receive('round:started', snapshot({ timerId: 'round-two', currentRound: 2 }));
+  assert.equal(app.render().myAssignment?.round, 1);
+  assert.equal(app.render().myAssignment?.title, prompt.title);
+});
