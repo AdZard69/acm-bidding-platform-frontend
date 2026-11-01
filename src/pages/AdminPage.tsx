@@ -40,6 +40,7 @@ export const AdminPage: React.FC = () => {
     currentRound,
     rounds: capturedRounds,
     hasNextRound,
+    nextRoundNumber,
     currentPrompt,
     secondsRemaining,
     availableSlots,
@@ -72,8 +73,8 @@ export const AdminPage: React.FC = () => {
   const [bidHistory, setBidHistory] = useState<Bid[]>([]);
 
   useEffect(() => {
-    setTargetRound(gameStatus === 'round_ended' && hasNextRound ? currentRound + 1 : currentRound || 1);
-  }, [currentRound, gameStatus, hasNextRound]);
+    setTargetRound(gameStatus === 'round_ended' && hasNextRound ? nextRoundNumber ?? currentRound + 1 : currentRound || 1);
+  }, [currentRound, gameStatus, hasNextRound, nextRoundNumber]);
 
   // Team creation
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
@@ -813,7 +814,7 @@ export const AdminPage: React.FC = () => {
                     disabled={loading || !canAdvance}
                     className="py-2 px-4 rounded-lg bg-surface-200 hover:bg-surface-50 text-slate-300 border border-surface-border font-bold uppercase transition-colors disabled:opacity-40"
                   >
-                    {hasNextRound ? `Next · Round ${currentRound + 1} / Prompt ${currentRound + 1}` : 'Finish Final Round'}
+                    {hasNextRound ? `Next · Round ${nextRoundNumber ?? currentRound + 1} / Prompt ${nextRoundNumber ?? currentRound + 1}` : 'Finish Final Round'}
                   </button>
 
                   <button
