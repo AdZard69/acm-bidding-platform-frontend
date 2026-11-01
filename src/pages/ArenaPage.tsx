@@ -14,6 +14,9 @@ export const ArenaPage: React.FC = () => {
     isConnected,
     gameStatus,
     currentRound,
+    currentPromptIndex,
+    totalPromptsInRound,
+    hasNextPrompt,
     hasNextRound,
     currentPrompt,
     secondsRemaining,
@@ -77,7 +80,11 @@ export const ArenaPage: React.FC = () => {
 
           <div className="px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-border font-mono text-xs text-slate-300">
             STATUS: <strong className="text-white uppercase">{gameStatus}</strong>
-            {currentRound > 0 && <span className="ml-2 text-brand-amber">• R{currentRound}</span>}
+            {currentRound > 0 && (
+              <span className="ml-2 text-brand-amber">
+                • R{currentRound} P{currentPromptIndex + 1}
+              </span>
+            )}
           </div>
 
           <button
@@ -126,9 +133,11 @@ export const ArenaPage: React.FC = () => {
             </div>
           </div>
 
-          {gameStatus === 'round_ended' && <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm font-mono">
-            Round {currentRound} complete. {hasNextRound ? 'Waiting for the admin to open the next prompt.' : 'All prompt rounds are complete.'}
-          </div>}
+          {gameStatus === 'round_ended' && (
+            <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm font-mono">
+              Round {currentRound} · Prompt {currentPromptIndex + 1} complete. {hasNextPrompt ? 'Waiting for admin to advance to next prompt.' : (currentRound === 1 ? 'Round 1 complete.' : 'Bidding complete.')}
+            </div>
+          )}
 
           {/* Active Prompt Card */}
           <div className="flex-1 p-6 rounded-xl bg-surface-100 border border-surface-border flex flex-col justify-between">
@@ -136,7 +145,7 @@ export const ArenaPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="px-2.5 py-0.5 rounded bg-surface-50 text-brand-cyan border border-surface-border font-bold">
-                    ROUND {currentRound} · PROMPT {currentRound}
+                    ROUND {currentRound} · PROMPT {currentPromptIndex + 1}{totalPromptsInRound > 0 ? ` OF ${totalPromptsInRound}` : ''} {currentRound === 2 ? '(k = 0.7)' : '(k = 1.0)'}
                   </span>
                   <span className="text-slate-400">{biddingConfig.slotsPerPrompt} Winning Slots</span>
                 </div>

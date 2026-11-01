@@ -52,7 +52,8 @@ function setup(t, role = 'team') {
     '../context/SocketContext': { useSocket: render },
     '../context/AuthContext': { useAuth: () => auth },
     '../components/BiddingTimerBadge': { BiddingTimerBadge: () => null },
-    '../api/client': { api }
+    '../api/client': { api },
+    '../utils/multiplier': loadSource('utils/multiplier.ts')
   };
   const { TeamPage } = loadSource('pages/TeamPage.tsx', mocks);
   const { ArenaPage } = loadSource('pages/ArenaPage.tsx', mocks);
@@ -274,14 +275,14 @@ test('round slider and number input select actions while keeping round controls 
   nodes();
   await flushPromises();
   const slider = nodes().find((node) => node.type === 'input' && node.props.type === 'range');
-  slider.props.onChange({ target: { value: '3' } });
-  assert.ok(button('Start Round 3 · Prompt 3'));
-  assert.ok(button('Rerun Round 3'));
+  slider.props.onChange({ target: { value: '2' } });
+  assert.ok(button('Start Round 2'));
+  assert.ok(button('Rerun Round 2'));
   assert.ok(nodes().some((node) => node.type === 'input' && node.props.type === 'range'));
   assert.ok(!nodes().some((node) => text(node) === 'Return to Controls'));
   const roundInput = nodes().find((node) => node.props['aria-label'] === 'Round number to control');
   roundInput.props.onChange({ target: { value: '1' } });
-  await button('Start Round 1 · Prompt 1').props.onClick();
+  await button('Start Round 1').props.onClick();
   await button('Rerun Round 1').props.onClick();
   assert.deepEqual(actions, [['start', 1], ['rerun', 1]]);
   assert.ok(nodes().some((node) => node.type === 'input' && node.props.type === 'range'));

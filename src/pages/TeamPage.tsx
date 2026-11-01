@@ -10,12 +10,16 @@ import { useSocket } from '../context/SocketContext';
 import { BiddingTimerBadge } from '../components/BiddingTimerBadge';
 import { api } from '../api/client';
 import { Bid } from '../types';
+import { calculateMultiplier, calculateBoostPercentage } from '../utils/multiplier';
 
 export const TeamPage: React.FC = () => {
   const { user } = useAuth();
   const {
     gameStatus,
     currentRound,
+    currentPromptIndex,
+    totalPromptsInRound,
+    hasNextPrompt,
     timerId,
     isTimerSynced,
     hasNextRound,
@@ -146,7 +150,11 @@ export const TeamPage: React.FC = () => {
 
         <div className="text-right text-slate-400">
           <div>Status: <strong className="text-white uppercase">{gameStatus}</strong></div>
-          {currentRound > 0 && <div>Round: <strong className="text-brand-amber">R{currentRound}</strong></div>}
+          {currentRound > 0 && (
+            <div>
+              Round: <strong className="text-brand-amber">R{currentRound} P{currentPromptIndex + 1}</strong>
+            </div>
+          )}
         </div>
       </div>
 
@@ -206,7 +214,10 @@ export const TeamPage: React.FC = () => {
         <div className="space-y-6">
           <div className="p-5 rounded-xl bg-surface-100 border border-surface-border space-y-3">
               <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-brand-cyan font-bold">ROUND {currentRound || '—'} · PROMPT {currentRound || '—'}</span>
+                <span className="text-brand-cyan font-bold">
+                  ROUND {currentRound || '—'} · PROMPT {currentRound ? currentPromptIndex + 1 : '—'}
+                  {currentRound === 2 ? ' (k = 0.7 SECOND CHANCE)' : ' (k = 1.0)'}
+                </span>
                 <div>
                   {!isTimerSynced ? (
                     <span className="text-slate-400">Syncing bidding state…</span>
@@ -226,9 +237,11 @@ export const TeamPage: React.FC = () => {
                 </div>
               </div>
 
-              {gameStatus === 'round_ended' && <p className="text-amber-300 text-xs font-mono">
-                Round {currentRound} is complete. {hasNextRound ? 'Waiting for the admin to open the next prompt.' : 'All prompt rounds are complete.'}
-              </p>}
+              {gameStatus === 'round_ended' && (
+                <p className="text-amber-300 text-xs font-mono">
+                  Round {currentRound} · Prompt {currentPromptIndex + 1} is complete. {hasNextPrompt ? 'Waiting for admin to advance to next prompt.' : (currentRound === 1 ? 'Round 1 is complete.' : 'Bidding is complete.')}
+                </p>
+              )}
               {currentPrompt ? (
                 <div className="space-y-2">
                   <h3 className="text-lg font-bold font-mono text-white">
@@ -306,7 +319,13 @@ export const TeamPage: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-300">Bid Minutes:</span>
-                    <span className="font-bold text-[#D4AF37] text-sm">{bidMinutes} mins</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-emerald-400 font-bold font-mono">
+                        {calculateMultiplier(bidMinutes, currentRound || 1, biddingConfig.baseTime, biddingConfig.minBid).toFixed(3)}x
+                        {' '}(+{calculateBoostPercentage(calculateMultiplier(bidMinutes, currentRound || 1, biddingConfig.baseTime, biddingConfig.minBid))}%)
+                      </span>
+                      <span className="font-bold text-[#D4AF37] text-sm">{bidMinutes} mins</span>
+                    </div>
                   </div>
                   <input
                     type="range"

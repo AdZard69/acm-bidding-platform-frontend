@@ -2,17 +2,17 @@
  * Multiplier calculation matching the backend formula:
  * multiplier = e ^ (k * (1 - bid / base_time))
  *
- * Round 1: k = 1.0  (range ~1.000 to ~2.117)
- * Every prompt round: k = 1.0 (the same curve for every team)
+ * Round 1: k = 1.0  (range ~1.000 to ~2.117 for base=120, min=30)
+ * Round 2: k = 0.7  (range ~1.000 to ~1.690 for base=120, min=30)
  */
 
 export const K_FACTORS: Record<number, number> = {
   1: 1.0,
-  2: 1.0
+  2: 0.7
 };
 
 export function getKFactor(round = 1): number {
-  return 1.0;
+  return K_FACTORS[round] ?? 1.0;
 }
 
 export function calculateMultiplier(
