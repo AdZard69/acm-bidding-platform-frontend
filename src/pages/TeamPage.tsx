@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Users,
   AlertCircle,
   CheckCircle2,
   Award,
@@ -27,7 +26,6 @@ export const TeamPage: React.FC = () => {
     currentRound,
     promptNumber,
     totalPrompts,
-    passComplete,
     unassignedTeams,
     hasNextPrompt,
     timerId,
@@ -225,24 +223,6 @@ export const TeamPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      {/* Team Header */}
-      <div className="p-4 rounded-xl bg-surface-100 border border-surface-border flex items-center justify-between font-mono text-xs">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded bg-surface-50 text-brand-emerald">
-            <Users className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="font-bold text-white text-sm block">{user?.teamName}</span>
-            <span className="text-slate-400">Team Dashboard</span>
-          </div>
-        </div>
-
-        <div className="text-right text-slate-400">
-          <div>Status: <strong className="text-white uppercase">{gameStatus === 'round_ended' ? passComplete ? 'Pass complete' : 'Prompt closed' : gameStatus}</strong></div>
-          {currentRound > 0 && <div>Round: <strong className="text-brand-amber">R{currentRound}</strong></div>}
-        </div>
-      </div>
-
       {/* Synchronized Bidding Countdown */}
       <BiddingTimerBadge />
       {/* STATE A: TEAM HAS BEEN ASSIGNED A PROMPT */}
@@ -571,9 +551,6 @@ export const TeamPage: React.FC = () => {
                           </div>
                           <div>
                             <span className="text-white font-bold text-xs block">Coding Window Not Started</span>
-                            <span className="text-slate-400 text-[11px]">
-                              Waiting for organizers to start the countdown. You will have {activeAssignment.bidMinutes} minutes once started.
-                            </span>
                           </div>
                         </div>
                         <span className="px-2.5 py-1 rounded bg-surface-200 text-slate-400 text-[10px] uppercase font-bold shrink-0">
@@ -674,9 +651,6 @@ export const TeamPage: React.FC = () => {
                           className="w-full pl-9 pr-3 py-2.5 bg-surface-200 border border-surface-border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-[#D4AF37] disabled:opacity-50 disabled:cursor-not-allowed font-mono text-xs"
                         />
                       </div>
-                      <p className="text-slate-500 text-[10px] mt-1.5">
-                        Please provide a public GitHub repository link containing your team's hackathon project code.
-                      </p>
                     </div>
 
                     {/* Current recorded submission link */}

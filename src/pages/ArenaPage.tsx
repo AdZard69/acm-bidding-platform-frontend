@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Tv,
   Maximize2,
   Minimize2,
   Clock,
@@ -10,23 +9,18 @@ import { useSocket } from '../context/SocketContext';
 
 export const ArenaPage: React.FC = () => {
   const {
-    isConnected,
     gameStatus,
     currentRound,
-    promptNumber,
-    totalPrompts,
     passComplete,
     unassignedTeams,
     hasNextPrompt,
     currentPrompt,
     secondsRemaining,
     isPaused,
-    isExpired,
     biddingConfig,
     availableSlots,
     bids,
-    lastWinners,
-    refreshState
+    lastWinners
   } = useSocket();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -58,37 +52,22 @@ export const ArenaPage: React.FC = () => {
   const isWarning = secondsRemaining <= 20 && secondsRemaining > 10;
 
   return (
-    <div className="min-h-[92vh] flex flex-col p-4 sm:p-6 bg-background text-slate-100">
+    <div className="min-h-[calc(100dvh-3.5rem)] flex flex-col p-4 sm:p-6 bg-background text-slate-100">
       {/* Top Bar */}
-      <div className="flex items-center justify-between pb-4 border-b border-surface-border">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-surface-100 border border-surface-border text-slate-300">
-            <Tv className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-lg sm:text-xl font-bold font-mono text-white">
-              Auditorium Arena
-            </h1>
-            <p className="text-xs font-mono text-slate-400">
-              Live Auction & Timer Display
-            </p>
-          </div>
+      <div className="flex flex-wrap items-center justify-end gap-3 pb-4 border-b border-surface-border">
+        <div className="px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-border font-mono text-xs text-slate-300">
+          STATUS: <strong className="text-white uppercase">{gameStatus === 'round_ended' ? passComplete ? 'Pass complete' : 'Prompt closed' : gameStatus}</strong>
+          {currentRound > 0 && <span className="ml-2 text-brand-amber">• R{currentRound}</span>}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="px-3 py-1.5 rounded-lg bg-surface-100 border border-surface-border font-mono text-xs text-slate-300">
-            STATUS: <strong className="text-white uppercase">{gameStatus === 'round_ended' ? passComplete ? 'Pass complete' : 'Prompt closed' : gameStatus}</strong>
-            {currentRound > 0 && <span className="ml-2 text-brand-amber">• R{currentRound}</span>}
-          </div>
-
-          <button
-            onClick={toggleFullscreen}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 hover:bg-surface-50 text-slate-300 border border-surface-border font-mono text-xs transition-colors"
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
-          </button>
-        </div>
+        <button
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 hover:bg-surface-50 text-slate-300 border border-surface-border font-mono text-xs transition-colors"
+        >
+          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
+        </button>
       </div>
 
       {/* Main Grid */}
@@ -132,16 +111,9 @@ export const ArenaPage: React.FC = () => {
           </div>}
 
           {/* Active Prompt Card */}
-          <div className="flex-1 p-6 rounded-xl bg-surface-100 border border-surface-border flex flex-col justify-between">
+          <section aria-label="Current prompt" className="flex-1 p-6 rounded-xl bg-surface-100 border border-surface-border">
             {currentPrompt ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="px-2.5 py-0.5 rounded bg-surface-50 text-brand-cyan border border-surface-border font-bold">
-                    ROUND {currentRound} · PROMPT {promptNumber} / {totalPrompts}
-                  </span>
-                  <span className="text-slate-400">{biddingConfig.slotsPerPrompt} Winning Slots</span>
-                </div>
-
                 <h2 className="text-xl sm:text-2xl font-bold font-mono text-white">
                   {currentPrompt.title}
                 </h2>
@@ -155,13 +127,7 @@ export const ArenaPage: React.FC = () => {
                 Awaiting next prompt from admin
               </div>
             )}
-
-            <div className="mt-4 pt-3 border-t border-surface-border flex justify-between text-xs font-mono text-slate-400">
-              <span>Min Bid: {biddingConfig.minBid}m</span>
-              <span>Max Time: {biddingConfig.baseTime}m</span>
-              <span>Anti-Collision: Unique minute bids</span>
-            </div>
-          </div>
+          </section>
         </div>
 
         {/* Right Column (5 cols): Live Bids Wall */}

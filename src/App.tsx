@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { Navbar } from './components/Navbar';
-import { Footer } from './components/Footer';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 import { HomePage } from './pages/HomePage';
@@ -54,7 +53,6 @@ export const App: React.FC = () => {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </main>
-            <Footer />
           </div>
         </BrowserRouter>
       </SocketProvider>

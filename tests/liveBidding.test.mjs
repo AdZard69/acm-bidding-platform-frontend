@@ -325,7 +325,7 @@ test('a later pass on the same prompt preserves an earlier winner assignment', a
   assert.doesNotMatch(app.teamHTML(), /multiplier|boost|k\s*=/i);
 });
 
-test('team and arena labels separate the pass from prompt progress while admin retains scoring details', async (t) => {
+test('team shows prompt progress and arena keeps the closed prompt while admin retains scoring details', async (t) => {
   const app = setup(t);
   app.receive('game:status', snapshot({ promptNumber: 2, status: 'round_ended', remainingMs: 0,
     bids: [{ teamId: 1, promptId: 1, round: 1, bidMinutes: 40, teamName: 'One' }] }));
@@ -333,7 +333,8 @@ test('team and arena labels separate the pass from prompt progress while admin r
   assert.match(team, /ROUND 1 · PROMPT 2 \/ 3/);
   assert.match(team, /Waiting for the next prompt/);
   assert.doesNotMatch(team, /multiplier|boost|k\s*=/i);
-  assert.match(app.arenaHTML(), /ROUND 1 · PROMPT 2 \/ 3/);
+  assert.match(app.arenaHTML(), /Build a game/);
+  assert.match(app.arenaHTML(), /Waiting for the next prompt/);
   assert.match(app.adminHTML(), /Scoring k = 1.0/);
   assert.match(app.adminHTML(), /Multiplier/);
   app.receive('game:status', snapshot({ promptNumber: 3, status: 'round_ended', remainingMs: 0,
